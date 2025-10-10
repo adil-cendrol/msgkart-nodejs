@@ -28,14 +28,11 @@ export async function handleBrowserConnection(ws) {
 
   ws.on("message", async (msg) => {
     const data = JSON.parse(msg.toString());
-    // console.log(data, "from browser ")
     if (data.sdpType === "offer") {
       console.log("📨 Browser offer received isnide ");
       await pc.setRemoteDescription({ type: "offer", sdp: data.sdp });
       if (activeMetaWs && activeMetaPC) {
-        console.log("inside offer")
         const offer = await activeMetaPC.createOffer();
-        console.log(offer, "offersdp")
         await activeMetaPC.setLocalDescription(offer);
         const metaSDP = finalizeSDP(activeMetaPC, candidates);
         const offerPayload = {
@@ -61,10 +58,8 @@ export async function handleBrowserConnection(ws) {
         return;
       }
       try {
-        // console.log("📨 Browser sent an answer to Backend", data.sdp);
         const { activeBrowserWs, activeMetaWs, activeBrowserPC, activeMetaPC } = getConnections();
         await pc.setRemoteDescription({ type: "answer", sdp: data.sdp });
-        
         const answer = await activeMetaPC.createAnswer();
         await activeMetaPC.setLocalDescription(answer);
         const metaSDP = finalizeSDP(activeMetaPC, candidates);

@@ -4,7 +4,7 @@ import { setMetaConnection, getConnections } from "./connectionManager.mjs";
 
 export async function handleMetaConnection(ws) {
   const { pc, candidates } = await createPeerConnection("sendrecv");
-  const { activeBrowserWs, activeMetaWs, activeBrowserPC, activeMetaPC } = getConnections();
+  // const { activeBrowserWs, activeMetaWs, activeBrowserPC, activeMetaPC } = getConnections();
   setMetaConnection(ws, pc);
 
   ws.on("close", () => {
@@ -31,8 +31,6 @@ export async function handleMetaConnection(ws) {
   ws.on("message", async (msg) => {
     const data = JSON.parse(msg.toString());
     if (data.sdpType === "offer") {
-      // console.log("📨 Meta sent an offer to Backend:", data);
-      // const { candidates } = await createPeerConnection("sendrecv");
       const { activeBrowserPC, activeBrowserWs } = getConnections();
       if (!activeBrowserPC || !activeBrowserWs) {
         console.warn("⚠️ Browser PC or WebSocket not ready yet");
