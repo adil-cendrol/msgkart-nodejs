@@ -1,6 +1,6 @@
 import { createPeerConnection, finalizeSDP } from "../utils/peerUtils.mjs";
 import { stopRecording, metaReady } from "../audio/audioMixer.mjs";
-import { setMetaConnection, getConnections } from "./connectionManager.mjs";
+import { setMetaConnection, getConnections, hangupCall } from "./connectionManager.mjs";
 
 export async function handleMetaConnection(ws) {
   const { pc, candidates } = await createPeerConnection("sendrecv");
@@ -10,6 +10,7 @@ export async function handleMetaConnection(ws) {
   ws.on("close", () => {
     console.log("Meta disconnected");
     stopRecording();
+    hangupCall();
   });
 
   pc.onTrack.subscribe(track => {
@@ -30,6 +31,11 @@ export async function handleMetaConnection(ws) {
 
   ws.on("message", async (msg) => {
     const data = JSON.parse(msg.toString());
+    if (data.event === 'terminate') {
+      console.log("📞 Browser requested hangup");
+      hangupCall();
+      return;
+    }
     if (data.sdpType === "offer") {
       // console.log("📨 Meta sent an offer to Backend:", data);
       // const { candidates } = await createPeerConnection("sendrecv");

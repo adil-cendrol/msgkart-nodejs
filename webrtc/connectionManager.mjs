@@ -16,3 +16,33 @@ export function setBrowserConnection(ws, pc) {
 export function getConnections() {
     return { activeBrowserWs, activeMetaWs, activeBrowserPC, activeMetaPC };
 }
+
+export function clearConnections() {
+    activeBrowserWs = null;
+    activeMetaWs = null;
+    activeBrowserPC = null;
+    activeMetaPC = null;
+}
+
+export function hangupCall() {
+    console.log("🚫 Hanging up call and clearing connections...");
+
+    try {
+        if (activeBrowserPC) {
+            activeBrowserPC.close();
+            console.log("🧹 Closed Browser PeerConnection");
+        }
+        if (activeMetaPC) {
+            activeMetaPC.close();
+            console.log("🧹 Closed Meta PeerConnection");
+        }
+    } catch (err) {
+        console.error("❌ Error closing PeerConnections:", err);
+    }
+    clearConnections();
+    import("../audio/audioMixer.mjs").then(({ stopRecording }) => {
+        stopRecording();
+    }).catch(() => { });
+
+    console.log("✅ Call cleanup complete")
+}
