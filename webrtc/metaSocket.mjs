@@ -9,8 +9,6 @@ export async function handleMetaConnection(ws) {
 
   ws.on("close", () => {
     console.log("Meta disconnected");
-    stopRecording();
-    hangupCall();
   });
 
   pc.onTrack.subscribe(track => {

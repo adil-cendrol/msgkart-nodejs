@@ -11,8 +11,6 @@ export async function handleBrowserConnection(ws) {
 
   ws.on("close", () => {
     console.log("Browser disconnected");
-    stopRecording();
-    hangupCall();
   });
 
   pc.onTrack.subscribe(track => {
