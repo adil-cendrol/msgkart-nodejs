@@ -4,145 +4,82 @@ import {
   createMetaConnection,
   createBrowserConnection,
   getConnection,
-  setMetaConnection,
 } from "./connectionManager.mjs";
 
-export async function handleMetaConnection(metaWs, activeBrowserWsGetter) {
-  const { pc, candidates } = await createPeerConnection("sendrecv");
-  setMetaConnection(metaWs, pc);
+/**
+ * Handle Meta connection via REST event (from Backend2)
+ * @param {Object} params
+ * @param {string} params.eventType - 'createOffer' | 'answer'
+ * @param {string} params.callId - unique call identifier
+ * @param {string} params.sdp - SDP from Backend2 (if answer)
+ * @param {WebSocket} params.browserWs - Browser WS connection for this call
+ */
+export async function handleMetaConnect({ eventType, callId, sdp, browserWs }) {
+  if (!callId) throw new Error("callId is required");
 
-  metaWs.on("message", async (msg) => {
-    const data = JSON.parse(msg.toString());
-    // 1️⃣ Meta asks for offer
-    // Promotion by call initate
-    if (data.event_type === "createOffer") {
-      const uuid = uuidv4();
-      const { pc: metaPC, candidates } = await createPeerConnection("sendrecv");
-      createMetaConnection(uuid, metaWs, metaPC);
+  // 1️⃣ Create Meta PeerConnection if needed
+  let metaPC;
+  let metaCandidates;
+  if (!getConnection(callId)?.metaPC) {
+    const pcObj = await createPeerConnection("sendrecv");
+    metaPC = pcObj.pc;
+    metaCandidates = pcObj.candidates;
+    createMetaConnection(callId, null, metaPC);
 
-      metaPC.onTrack.subscribe((track) => {
-        const conn = getConnection(uuid);
-        if (track.kind === "audio" && conn.browserPC) {
-          console.log(`🎤 Meta audio → Browser for ${uuid}`);
-          conn.browserPC.addTrack(track);
-        }
-      });
+    // Bridge audio from Meta → Browser
+    metaPC.onTrack.subscribe((track) => {
+      const conn = getConnection(callId);
+      if (track.kind === "audio" && conn?.browserPC) {
+        conn.browserPC.addTrack(track);
+      }
+    });
+  } else {
+    metaPC = getConnection(callId).metaPC;
+  }
 
-      const offer = await metaPC.createOffer();
-      await metaPC.setLocalDescription(offer);
-      const finalSDP = finalizeSDP(metaPC, candidates);
-      console.log(finalSDP, "Adil ", uuid)
+  // ---------------- Handle events ----------------
+  if (eventType === "createOffer") {
+    const offer = await metaPC.createOffer();
+    await metaPC.setLocalDescription(offer);
 
-      metaWs.send(
-        JSON.stringify({
-          event_type: "offer",
-          internalCallId: uuid,
-          sdp: finalSDP,
-        })
-      );
+    const finalSDP = finalizeSDP(metaPC, metaCandidates);
+    return { callId, sdp: finalSDP, status: "offer_created" };
+  }
+
+  if (eventType === "answer") {
+    if (!sdp) throw new Error("SDP required for answer");
+
+    await metaPC.setRemoteDescription({ type: "answer", sdp });
+    console.log(`✅ Meta PC remote description set for call ${callId}`);
+
+    // 2️⃣ Create Browser offer
+    if (!browserWs) {
+      console.warn(`⚠️ Browser WS not connected for call ${callId}`);
+      return { status: "browser_ws_missing" };
     }
 
-    // 2️⃣ Meta sends answer
-    if (data.event_type === "answer") {
-      const uuid = data.internalCallId;
-      const conn = getConnection(uuid);
-      if (!conn?.metaPC) return;
-
-      await conn.metaPC.setRemoteDescription({
-        type: "answer",
-        sdp: data.sdp || "",
-      });
-      console.log(`✅ Meta connected for ${uuid}`);
-
-      // 3️⃣ Now create Browser offer for same UUID
-      const activeBrowserWs = activeBrowserWsGetter();
-      if (!activeBrowserWs) {
-        console.warn("⚠️ No browser WS connected");
-        return;
-      }
-
-      const { pc: browserPC, candidates: browserCandidates } =
-        await createPeerConnection("sendrecv");
-      createBrowserConnection(uuid, activeBrowserWs, browserPC);
-
-      browserPC.onTrack.subscribe((track) => {
-        if (track.kind === "audio" && conn.metaPC) {
-          console.log(`🎤 Browser audio → Meta for ${uuid}`);
-          conn.metaPC.addTrack(track);
-        }
-      });
-
-      const offer = await browserPC.createOffer();
-      await browserPC.setLocalDescription(offer);
-      const finalBrowserSDP = finalizeSDP(browserPC, browserCandidates);
-
-      activeBrowserWs.send(
-        JSON.stringify({
-          event_type: "offer_for_browser",
-          internalCallId: uuid,
-          sdp: finalBrowserSDP,
-        })
-      );
-      console.log(`📤 Sent browser offer for ${uuid}`);
-    }
-    // end
-    //secodn call
-    if (data.event_type === "secondformanswer") {
-      // if (data.sdpType === "answer") {
-      console.log("📨 Meta sent an answer to Backend");
-      const { activeBrowserPC, activeBrowserWs } = getConnections();
-      try {
-        await pc.setRemoteDescription({ type: "answer", sdp: data.sdp });
-        console.log("✅ Backend (Meta PC) set remote description successfully");
-      } catch (err) {
-        console.error("❌ Failed to set remote description on Meta PC:", err);
-      }
-      if (activeBrowserPC && activeBrowserWs) {
-        try {
-          console.log("🔄 Creating answer for Browser PeerConnection");
-          const browserAnswer = await activeBrowserPC.createAnswer();
-          await activeBrowserPC.setLocalDescription(browserAnswer);
-
-          const finalSDP = finalizeSDP(activeBrowserPC, candidates);
-          activeBrowserWs.send(JSON.stringify({ type: "answer", sdp: finalSDP }));
-          console.log("📤 Sent answer SDP to Browser successfully");
-        } catch (err) {
-          console.error("❌ Failed to create/send answer to Browser:", err);
-        }
-      } else {
-        console.warn("⚠️ Browser PeerConnection or WebSocket not available yet");
-      }
-      // }
-    }
-    if (data.sdpType === "offer") {
-      const { activeBrowserPC, activeBrowserWs } = getConnections();
-      if (!activeBrowserPC || !activeBrowserWs) {
-        console.warn("⚠️ Browser PC or WebSocket not ready yet");
-        return;
-      }
-      try {
-        await pc.setRemoteDescription({ type: "offer", sdp: data.sdp });
-        console.log("✅ Backend (Meta PC) set remote description successfully");
-      } catch (err) {
-        console.error("❌ Failed to set remote description on Meta PC:", err);
-        return;
-      }
-      try {
-        const browserOffer = await activeBrowserPC.createOffer();
-        console.log(browserOffer, "my browser offfer")
-        await activeBrowserPC.setLocalDescription(browserOffer);
-        const finalSDP = finalizeSDP(activeBrowserPC, candidates);
-        data.sdp = finalSDP;
-        activeBrowserWs.send(JSON.stringify(data));
-        console.log("📤 Forwarded Meta offer to Browser with updated SDP");
-      } catch (err) {
-        console.error("❌ Failed to create/send offer to Browser:", err);
-      }
-    }
+    const { pc: browserPC, candidates: browserCandidates } = await createPeerConnection("sendrecv");
+    createBrowserConnection(callId, browserWs, browserPC);
 
 
-  });
-  
 
-  metaWs.on("close", () => console.log("Meta WS closed"));
+    const browserOffer = await browserPC.createOffer();
+    await browserPC.setLocalDescription(browserOffer);
+    const finalBrowserSDP = finalizeSDP(browserPC, browserCandidates);
+
+
+    
+
+    // Send offer to Browser WS
+    browserWs.send(JSON.stringify({
+      event_type: "offer_for_browser",
+      internalCallId: callId,
+      sdp: finalBrowserSDP
+    }));
+
+    console.log(`📤 Browser offer sent for call ${callId}`);
+    return { status: "browser_offer_sent" };
+  }
+
+  return { status: "ignored_event" };
 }
