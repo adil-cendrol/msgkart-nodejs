@@ -1,45 +1,34 @@
-import { createPeerConnection, finalizeSDP } from "../utils/peerUtils.mjs";
-import { browserReady, stopRecording } from "../audio/audioMixer.mjs";
-// import { getConnections } from "./connectionManager.js";
-import { getConnections, hangupCall, setBrowserConnection } from "./connectionManager.mjs";
+// browserHandler.mjs
+import { finalizeSDP } from "../utils/peerUtils.mjs";
+import { getConnection } from "./connectionManager.mjs";
 
-export async function handleBrowserConnection(ws) {
-  console.log("📡 Browser connected");
+export async function handleBrowserConnection(browserWs, activemetaWsGetter) {
+  console.log("🌐 Browser connected");
   const { pc, candidates } = await createPeerConnection("sendrecv");
-  setBrowserConnection(ws, pc)
-  const { activeBrowserWs, activeMetaWs, activeBrowserPC, activeMetaPC } = getConnections();
+  setBrowserConnection(browserWs, pc)
+  const { activeMetaPC } = getConnections();
 
-  ws.on("close", () => {
-    console.log("Browser disconnected");
-  });
-
-  pc.onTrack.subscribe(track => {
-    const { activeMetaPC } = getConnections();
-    if (track.kind === "audio") {
-      console.log("🎤 Forwarding Browser audio to Meta");
-      activeMetaPC.addTrack(track);
-      browserReady(track)
-    }
-    track.onReceiveRtp.subscribe((rtp) => {
-      console.log("📥 RTP from browser side:", rtp.header.timestamp)
-    });
-  });
-
-  ws.on("message", async (msg) => {
+  browserWs.on("message", async (msg) => {
     const data = JSON.parse(msg.toString());
-    // console.log(data, "from browser ")
-    if (data.event === 'terminate') {
-      console.log("📞 Browser requested hangup");
-      hangupCall();
-      return;
+    // 3️⃣ Browser sends answer
+    if (data.event_type === "answer_for_browser") {
+      const uuid = data.internalCallId;
+      const conn = getConnection(uuid);
+      if (!conn?.browserPC) return;
+
+      await conn.browserPC.setRemoteDescription({
+        type: "answer",
+        sdp: data.sdp,
+      });
+      console.log(`✅ Browser connected for ${uuid} — audio bridged both ways`);
     }
     if (data.sdpType === "offer") {
-      console.log("📨 Browser offer received isnide ");
+      const { pc, candidates } = await createPeerConnection("sendrecv");
       await pc.setRemoteDescription({ type: "offer", sdp: data.sdp });
-      if (activeMetaWs && activeMetaPC) {
+      const activeMetaWs = activeMetaWsGetter();
+      if (activeMetaPC) {
         console.log("inside offer")
         const offer = await activeMetaPC.createOffer();
-        console.log(offer, "offersdp")
         await activeMetaPC.setLocalDescription(offer);
         const metaSDP = finalizeSDP(activeMetaPC, candidates);
         const offerPayload = {
@@ -58,7 +47,7 @@ export async function handleBrowserConnection(ws) {
         console.warn("❌ No Meta connected yet!");
       }
     }
-    else if (data.sdpType === "answer") {
+    if (data.sdpType === "answer") {
       const { activeMetaPC, activeMetaWs } = getConnections();
       if (!activeMetaPC || !activeMetaWs) {
         console.warn("⚠️ Meta PC or WebSocket not available yet");
@@ -81,5 +70,9 @@ export async function handleBrowserConnection(ws) {
       }
     }
 
+
   });
+
+
+  browserWs.on("close", () => console.log("Browser WS closed"));
 }
