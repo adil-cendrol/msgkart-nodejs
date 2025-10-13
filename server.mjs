@@ -10,7 +10,7 @@ app.use(express.json());
 
 app.post("/api/backend2-event", async (req, res) => {
     const { eventType, callId, sdp, businessId, agentId } = req.body;
-    const browserWs = getBrowserConnection(businessId, agentId); // your browser WS map
+    const browserWs = getBrowserWs(businessId, agentId); // your browser WS map
 
     try {
         const result = await handleMetaConnect({ eventType, callId, sdp, browserWs });
@@ -28,23 +28,23 @@ const wss = new WebSocketServer({ noServer: true });
 const browserConnections = new Map();
 
 server.on("upgrade", (req, socket, head) => {
-  wss.handleUpgrade(req, socket, head, (ws) => {
-    console.log("🌐 Browser WS connected");
-    ws.on("message", async (msg) => {
-      try {
-        const data = JSON.parse(msg.toString());
-        if (data.event_type === "init_browser") {
-          const { businessId, agentId } = data;
-          const key = `${businessId}_${agentId}`;
-          browserConnections.set(key, ws);
-          console.log(`✅ Browser registered: ${key}`);
-          handleBrowserConnection(ws);
-        }
-      } catch (err) {
-        console.error("❌ Error parsing browser WS message:", err);
-      }
+    wss.handleUpgrade(req, socket, head, (ws) => {
+        console.log("🌐 Browser WS connected");
+        ws.on("message", async (msg) => {
+            try {
+                const data = JSON.parse(msg.toString());
+                if (data.event_type === "init_browser") {
+                    const { businessId, agentId } = data;
+                    const key = `${businessId}_${agentId}`;
+                    browserConnections.set(key, ws);
+                    console.log(`✅ Browser registered: ${key}`);
+                    handleBrowserConnection(ws);
+                }
+            } catch (err) {
+                console.error("❌ Error parsing browser WS message:", err);
+            }
+        });
     });
-  });
 });
 function getBrowserWs(businessId, agentId) {
     return browserConnections.get(`${businessId}_${agentId}`);

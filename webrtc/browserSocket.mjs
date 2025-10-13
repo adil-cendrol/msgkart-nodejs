@@ -17,7 +17,9 @@ export async function handleBrowserConnection(browserWs) {
       await conn.browserPC.setRemoteDescription({ type: "answer", sdp: data.sdp });
       console.log(`✅ Browser answer set for ${uuid}`);
     }
+    
   });
+
 
   browserWs.on("close", () => console.log("Browser WS closed"));
 }
