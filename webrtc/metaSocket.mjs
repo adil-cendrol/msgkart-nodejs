@@ -6,6 +6,8 @@ import {
   getConnection,
 } from "./connectionManager.mjs";
 
+import { browserReady, metaReady, stopRecording } from "./audioRecorder.mjs";
+
 /**
  * Handle Meta connection via REST event (from Backend2)
  * @param {Object} params
@@ -31,6 +33,7 @@ export async function handleMetaConnect({ eventType, callId, sdp, browserWs }) {
       const conn = getConnection(callId);
       if (track.kind === "audio" && conn?.browserPC) {
         conn.browserPC.addTrack(track);
+        metaReady(callId, track);
       }
     });
   } else {
@@ -61,14 +64,16 @@ export async function handleMetaConnect({ eventType, callId, sdp, browserWs }) {
     const { pc: browserPC, candidates: browserCandidates } = await createPeerConnection("sendrecv");
     createBrowserConnection(callId, browserWs, browserPC);
 
-
-
+    browserPC.onTrack.subscribe((track) => {
+      if (track.kind === "audio" && metaPC) {
+        console.log(`🎤 Browser audio → Meta for ${uuid}`);
+        metaPC.addTrack(track);
+        browserReady(callId, track);
+      }
+    });
     const browserOffer = await browserPC.createOffer();
     await browserPC.setLocalDescription(browserOffer);
     const finalBrowserSDP = finalizeSDP(browserPC, browserCandidates);
-
-
-    
 
     // Send offer to Browser WS
     browserWs.send(JSON.stringify({
@@ -78,7 +83,7 @@ export async function handleMetaConnect({ eventType, callId, sdp, browserWs }) {
     }));
 
     console.log(`📤 Browser offer sent for call ${callId}`);
-    return { status: "browser_offer_sent" };
+    // return { status: "browser_offer_sent" };
   }
 
   return { status: "ignored_event" };

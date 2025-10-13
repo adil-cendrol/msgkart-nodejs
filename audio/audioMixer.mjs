@@ -3,85 +3,90 @@ import { Writer as WavWriter } from "wav";
 import fs from "fs";
 import path from "path";
 
+// Stores per-call recording state
+const recordings = new Map(); // callId -> { browserStream, metaStream, opusBrowser, opusMeta, wavWriter, buffers, output }
 
-let opusBrowser, opusMeta, wavWriter;
-let isRecordingStarted = false;
-let browserStream = null;
-let metaStream = null;
-
-export function browserReady(track) {
-    browserStream = track;
-    tryStartRecording();
-}
-export function metaReady(track) {
-    metaStream = track;
-    tryStartRecording();
+export function browserReady(callId, track) {
+  if (!recordings.has(callId)) recordings.set(callId, {});
+  const rec = recordings.get(callId);
+  rec.browserStream = track;
+  tryStartRecording(callId);
 }
 
+export function metaReady(callId, track) {
+  if (!recordings.has(callId)) recordings.set(callId, {});
+  const rec = recordings.get(callId);
+  rec.metaStream = track;
+  tryStartRecording(callId);
+}
 
+function tryStartRecording(callId) {
+  const rec = recordings.get(callId);
+  if (rec.isRecordingStarted) return;
+  if (!rec.browserStream || !rec.metaStream) return;
 
-function tryStartRecording() {
-    if (isRecordingStarted || !browserStream || !metaStream) return;
+  console.log(`🎙️ Both audio streams ready for call ${callId}, starting recording...`);
 
-    console.log("🎙️ Both audio streams ready, starting recording...");
+  rec.opusBrowser = new Prism.opus.Decoder({ frameSize: 960, channels: 1, rate: 48000 });
+  rec.opusMeta = new Prism.opus.Decoder({ frameSize: 960, channels: 1, rate: 48000 });
 
-    opusBrowser = new Prism.opus.Decoder({ frameSize: 960, channels: 1, rate: 48000 });
-    opusMeta = new Prism.opus.Decoder({ frameSize: 960, channels: 1, rate: 48000 });
+  const recordingsDir = path.join(process.cwd(), "recordings");
+  if (!fs.existsSync(recordingsDir)) fs.mkdirSync(recordingsDir, { recursive: true });
 
-    const recordingsDir = path.join(process.cwd(), "recordings");
-    if (!fs.existsSync(recordingsDir)) {
-        fs.mkdirSync(recordingsDir, { recursive: true });
+  const wavPath = path.join(recordingsDir, `mixed_audio_${callId}_${Date.now()}.wav`);
+  rec.wavWriter = new WavWriter({ sampleRate: 48000, channels: 1, bitDepth: 16 });
+  const output = fs.createWriteStream(wavPath);
+  rec.wavWriter.pipe(output);
+
+  rec.browserBuffer = [];
+  rec.metaBuffer = [];
+
+  function mixAndWrite() {
+    while (rec.browserBuffer.length && rec.metaBuffer.length) {
+      const b = rec.browserBuffer.shift();
+      const m = rec.metaBuffer.shift();
+      const minLen = Math.min(b.length, m.length);
+      const mixed = Buffer.alloc(minLen);
+
+      for (let i = 0; i < minLen; i += 2) {
+        const bSample = b.readInt16LE(i);
+        const mSample = m.readInt16LE(i);
+        let mixedSample = bSample + mSample;
+        mixedSample = Math.max(-32768, Math.min(32767, mixedSample));
+        mixed.writeInt16LE(mixedSample, i);
+      }
+      rec.wavWriter.write(mixed);
     }
+  }
 
-    const wavPath = path.join(recordingsDir, `mixed_audio_${Date.now()}.wav`);
-    wavWriter = new WavWriter({ sampleRate: 48000, channels: 1, bitDepth: 16 });
-    const output = fs.createWriteStream(wavPath);
-    wavWriter.pipe(output);
+  rec.opusBrowser.on("data", (pcm) => {
+    rec.browserBuffer.push(pcm);
+    mixAndWrite();
+  });
 
-    const browserBuffer = [];
-    const metaBuffer = [];
+  rec.opusMeta.on("data", (pcm) => {
+    rec.metaBuffer.push(pcm);
+    mixAndWrite();
+  });
 
-    function mixAndWrite() {
-        while (browserBuffer.length && metaBuffer.length) {
-            const b = browserBuffer.shift();
-            const m = metaBuffer.shift();
-            const minLen = Math.min(b.length, m.length);
-            const mixed = Buffer.alloc(minLen);
+  rec.browserStream.onReceiveRtp.subscribe((rtp) => rec.opusBrowser.write(rtp.payload));
+  rec.metaStream.onReceiveRtp.subscribe((rtp) => rec.opusMeta.write(rtp.payload));
 
-            for (let i = 0; i < minLen; i += 2) {
-                const bSample = b.readInt16LE(i);
-                const mSample = m.readInt16LE(i);
-                let mixedSample = bSample + mSample;
-                mixedSample = Math.max(-32768, Math.min(32767, mixedSample));
-                mixed.writeInt16LE(mixedSample, i);
-            }
-            wavWriter.write(mixed);
-        }
-    }
-
-    opusBrowser.on("data", (pcm) => {
-        browserBuffer.push(pcm);
-        mixAndWrite();
-    });
-    opusMeta.on("data", (pcm) => {
-        metaBuffer.push(pcm);
-        mixAndWrite();
-    });
-
-    browserStream.onReceiveRtp.subscribe((rtp) => opusBrowser.write(rtp.payload));
-    metaStream.onReceiveRtp.subscribe((rtp) => opusMeta.write(rtp.payload));
-
-    isRecordingStarted = true;
-    console.log("🔴 Recording started at:", wavPath);
+  rec.isRecordingStarted = true;
+  console.log(`🔴 Recording started for call ${callId}: ${wavPath}`);
+  rec.wavPath = wavPath;
 }
 
-export function stopRecording() {
-    if (!isRecordingStarted) return;
-    console.log("🛑 Stopping recording...");
-    opusBrowser.end();
-    opusMeta.end();
-    wavWriter.end();
-    isRecordingStarted = false;
-    browserStream = null;
-    metaStream = null;
+export function stopRecording(callId) {
+  const rec = recordings.get(callId);
+  if (!rec || !rec.isRecordingStarted) return;
+
+  console.log(`🛑 Stopping recording for call ${callId}...`);
+  rec.opusBrowser.end();
+  rec.opusMeta.end();
+  rec.wavWriter.end();
+
+  // Clean up
+  recordings.delete(callId);
+  console.log(`✅ Recording finished for call ${callId}`);
 }
