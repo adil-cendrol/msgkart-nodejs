@@ -7,6 +7,7 @@ import {
   getAgentConnection,
   removeCallConnection,
   removeAgentConnection,
+  listAgentIds,
 } from "./connectionManager.mjs";
 
 import { browserReady, metaReady, stopRecording } from "../audio/audioMixer.mjs"
@@ -37,28 +38,28 @@ export async function handleMetaConnection(response) {
             metaReady(callId, track);
             console.log(`🔊 Meta audio bridged → Browser (call ${callId}, agent ${agentId})`);
           } catch (err) {
-            console.warn("bridge meta->browser failed:", err?.message || err);
+            console.warn("bridge meta -> browser failed:", err?.message || err);
           }
         }
       });
     } 
-    // else if (metaPC.ontrack !== undefined) {
-    //   metaPC.ontrack = (ev) => {
-    //     const track = ev.track;
-    //     const agentConn = getAgentConnection(agentId);
-    //     if (track.kind === "audio" && agentConn?.browserPC) {
-    //       try {
-    //         agentConn.browserPC.addTrack(track);
-    //         metaReady(callId, track);
-    //         console.log(`🔊 Meta audio bridged → Browser (call ${callId}, agent ${agentId})`);
-    //       } catch (err) {
-    //         console.warn("bridge meta->browser failed:", err?.message || err);
-    //       }
-    //     } else {
-    //       metaReady(callId, track);
-    //     }
-    //   };
-    // }
+    else if (metaPC.ontrack !== undefined) {
+      metaPC.ontrack = (ev) => {
+        const track = ev.track;
+        const agentConn = getAgentConnection(agentId);
+        if (track.kind === "audio" && agentConn?.browserPC) {
+          try {
+            agentConn.browserPC.addTrack(track);
+            metaReady(callId, track);
+            console.log(`🔊 Meta audio bridged → Browser (call ${callId}, agent ${agentId})`);
+          } catch (err) {
+            console.warn("bridge meta->browser failed:", err?.message || err);
+          }
+        } else {
+          metaReady(callId, track);
+        }
+      };
+    }
   }
 
   const metaPC = getCallConnection(callId)?.metaPC;
@@ -104,6 +105,7 @@ export async function handleMetaConnection(response) {
               metaPC.addTrack(track);
               browserReady(callId, track);
               console.log(`🎤 Browser audio bridged → Meta (call ${callId}, agent ${agentId})`);
+
             } catch (err) {
               console.warn("bridge browser->meta failed:", err?.message || err);
             }
@@ -155,10 +157,17 @@ export async function handleMetaConnection(response) {
   }
 
   if (eventType === "agent_removed") {
+    const listofAgent = listAgentIds()
     removeAgentConnection(agentId);
     console.log(`👋 Agent ${agentId} removed`);
+    console.log(listofAgent , "list of avaibale agent is there")
     return { status: "agent_removed" };
   }
+  // list of all agent connected
+
 
   return { status: "ignored_event" };
 }
+
+
+
