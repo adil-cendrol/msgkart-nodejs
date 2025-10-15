@@ -1,31 +1,73 @@
-// import { stopRecording } from "../audio/audioMixer.mjs";
-// import { finalizeSDP, createPeerConnection } from "../utils/peerUtils.mjs";
-// import { getConnection, createBrowserConnection, setBrowserConnection, removeConnection } from "./connectionManager.mjs";
+import { browserReady } from "../audio/audioMixer.mjs";
+import { finalizeSDP, createPeerConnection } from "../utils/peerUtils.mjs";
+import { createBrowserConnection, getAgentConnection, listAgentIds, removeAgentConnection } from "./connectionManager.mjs";
+export async function handleBrowserConnection(response) {
+    const { eventType, agentId } = response
+    // ---------- Agent (browser) offer: create or reuse agent's browserPC ----------
+    if (eventType === "agentOffer") {
+        if (!agentId) return { status: "missing_agent" };
+        let agentConn = getAgentConnection(agentId);
+        if (!agentConn?.browserPC) {
+            const { pc: browserPC, candidates: browserCandidates } = await createPeerConnection("sendrecv");
+            createBrowserConnection(agentId, browserPC, browserCandidates);
+            agentConn = getAgentConnection(agentId);
 
-// export async function handleBrowserConnection(browserWs) {
-//   console.log("🌐 Browser connected");
-//   const { pc, candidates } = await createPeerConnection("sendrecv");
-//   setBrowserConnection(browserWs, pc);
+            // browser -> meta bridging on track
+            if (browserPC.onTrack) {
+                browserPC.onTrack.subscribe((track) => {
+                    if (track.kind === "audio" && metaPC) {
+                        try {
+                            metaPC.addTrack(track);
+                            browserReady(callId, track);
+                            console.log(`🎤 Browser audio bridged → Meta (call ${callId}, agent ${agentId})`);
 
-//   browserWs.on("message", async msg => {
-//     const data = JSON.parse(msg.toString());
-//     const uuid = data.internalCallId;
-//     const conn = getConnection(uuid);
-//     if (!conn) return;
+                        } catch (err) {
+                            console.warn("bridge browser->meta failed:", err?.message || err);
+                        }
+                    } else {
+                        browserReady(callId, track);
+                    }
+                });
+            } else if (browserPC.ontrack !== undefined) {
+                browserPC.ontrack = (ev) => {
+                    const track = ev.track;
+                    if (track.kind === "audio" && metaPC) {
+                        try {
+                            metaPC.addTrack(track);
+                            browserReady(callId, track);
+                            console.log(`🎤 Browser audio bridged → Meta (call ${callId}, agent ${agentId})`);
+                        } catch (err) {
+                            console.warn("bridge browser->meta failed:", err?.message || err);
+                        }
+                    } else {
+                        browserReady(callId, track);
+                    }
+                };
+            }
+        }
+        const agentBrowserPC = getAgentConnection(agentId).browserPC;
+        await agentBrowserPC.setRemoteDescription({ type: "offer", sdp });
+        const answer = await agentBrowserPC.createAnswer();
+        await agentBrowserPC.setLocalDescription(answer);
+        const finalBrowserSDP = finalizeSDP(agentBrowserPC, getAgentConnection(agentId)?.browserCandidates);
+        return { callId, agentId, sdp: finalBrowserSDP, status: "agent_answer_created" };
+    }
 
-//     // Browser answer
-//     if (data.event_type === "answer_for_browser") {
-//       await conn.browserPC.setRemoteDescription({ type: "answer", sdp: data.sdp });
-//       console.log(`✅ Browser answer set for ${uuid}`);
-//     }
-//     if (eventType === "call_ended") {
-//       removeConnection(callId);
-//       stopRecording(callId)
-//       return { status: "call_disconnected" };
-//     }
-    
+    if (eventType === "agentAnswer") {
+        if (!agentId) return { status: "missing_agent" };
+        const agentConn = getAgentConnection(agentId);
+        if (agentConn?.browserPC) {
+            await agentConn.browserPC.setRemoteDescription({ type: "answer", sdp });
+            console.log(`✅ Browser PC remote description set for agent ${agentId}`);
+        }
+        return { status: "agent_answer_set" };
+    }
 
-//   });
-
-//   browserWs.on("close", () => console.log("Browser WS closed"));
-// }
+    if (event === "agent_removed") {
+        const listofAgent = listAgentIds()
+        removeAgentConnection(agentId);
+        console.log(`👋 Agent ${agentId} removed`);
+        console.log(listofAgent, "list of avaibale agent is there")
+        return { status: "agent_removed" };
+    }
+}
