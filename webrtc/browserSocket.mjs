@@ -14,8 +14,9 @@ export async function handleBrowserConnection(response) {
         const { event, agentId, sdp } = response;
         if (!agentId) return { status: "missing_agent" };
         if (!event) return { status: "event_missing" }
-        if (!sdp) return { status: "sdp_missing" }
+        // if (!sdp) return { status: "sdp_missing" }
         if (event === "browser_offer_sdp") {
+            if (!sdp) return { status: "sdp_missing" };
             try {
                 let agentConn = getAgentConnection(agentId);
                 // create peer connection if not already present
@@ -91,7 +92,7 @@ export async function handleBrowserConnection(response) {
         }
 
         // --- Handle agent removal ---
-        if (event === "agent_removed") {
+        if (event === "browser_terminate") {
             try {
                 const listOfAgents = listAgentIds();
                 removeAgentConnection(agentId);
