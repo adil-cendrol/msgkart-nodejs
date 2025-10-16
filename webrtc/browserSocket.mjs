@@ -9,31 +9,38 @@ import {
     getCallIdByAgent,
 } from "./connectionManager.mjs";
 
-export async function handleBrowserConnection(response) {
+/**
+ * Express route handler version of handleBrowserConnection
+ * @param {Request} req - Express request (expects body with event, agentId, sdp)
+ * @param {Response} res - Express response
+ */
+export async function handleBrowserConnection(req, res) {
     try {
-        const { event, agentId, sdp } = response || {};
-        // ✅ Early validation for missing or invalid fields
+        const { event, agentId, sdp } = req.body || {};
+
+        // ✅ Validate required fields
         if (!event || !agentId) {
-            console.warn("⚠️ Missing required fields in response:", response);
-            return {
-                status: 400,
+            console.warn("⚠️ Missing required fields:", req.body);
+            return res.status(400).json({
+                status: "error",
                 message: "Invalid payload: event or agentId missing",
-            };
+            });
         }
 
         if (event === "browser_offer_sdp" && !sdp) {
-            console.warn("⚠️ Missing SDP in browser_offer_sdp:", response);
-            return {
-                status: 400,
+            console.warn("⚠️ Missing SDP in browser_offer_sdp:", req.body);
+            return res.status(400).json({
+                status: "error",
                 message: "Invalid payload: SDP missing for browser_offer_sdp",
-            };
+            });
         }
 
+        // --- Handle browser offer SDP ---
         if (event === "browser_offer_sdp") {
             try {
                 let agentConn = getAgentConnection(agentId);
 
-                // create peer connection if not already present
+                // Create PeerConnection if not already present
                 if (!agentConn?.browserPC) {
                     try {
                         const { pc: browserPC, candidates: browserCandidates } =
@@ -41,7 +48,7 @@ export async function handleBrowserConnection(response) {
                         createBrowserConnection(agentId, browserPC, browserCandidates);
                         agentConn = getAgentConnection(agentId);
 
-                        // setup track listener
+                        // Track listener setup
                         browserPC.ontrack = (ev) => {
                             try {
                                 const track = ev.track;
@@ -70,7 +77,7 @@ export async function handleBrowserConnection(response) {
                     }
                 }
 
-                // set remote offer SDP
+                // Set remote offer SDP
                 try {
                     const agentBrowserPC = getAgentConnection(agentId)?.browserPC;
                     if (!agentBrowserPC)
@@ -80,7 +87,7 @@ export async function handleBrowserConnection(response) {
                     console.error(`❌ Failed to set remote offer SDP:`, err);
                 }
 
-                // create answer SDP
+                // Create answer SDP
                 let finalBrowserSDP = null;
                 try {
                     const agentBrowserPC = getAgentConnection(agentId)?.browserPC;
@@ -95,16 +102,16 @@ export async function handleBrowserConnection(response) {
                     console.error(`❌ Failed to create or finalize answer SDP:`, err);
                 }
 
-                return {
-                    status: 200,
+                return res.status(200).json({
+                    status: "success",
                     agentId,
                     sdp: finalBrowserSDP,
                     sdpType: "answer",
                     message: "agent_answer_created",
-                };
+                });
             } catch (err) {
                 console.error(`❌ Error handling browser_offer_sdp for ${agentId}:`, err);
-                return { status: 500, message: err.message };
+                return res.status(500).json({ status: "error", message: err.message });
             }
         }
 
@@ -115,16 +122,20 @@ export async function handleBrowserConnection(response) {
                 removeAgentConnection(agentId);
                 console.log(`👋 Agent ${agentId} removed`);
                 console.log("Available agents:", listOfAgents);
-                return { status: 200, message: "agent_removed" };
+                return res.status(200).json({ status: "success", message: "agent_removed" });
             } catch (err) {
                 console.error(`❌ Error removing agent ${agentId}:`, err);
-                return { status: 500, message: err.message };
+                return res.status(500).json({ status: "error", message: err.message });
             }
         }
 
-        return { status: 400, message: "Unknown event type" };
+        // Unknown event
+        return res.status(400).json({
+            status: "error",
+            message: "Unknown event type",
+        });
     } catch (err) {
         console.error(`❌ Global error in handleBrowserConnection:`, err);
-        return { status: 500, message: err.message };
+        return res.status(500).json({ status: "fatal_error", message: err.message });
     }
 }
