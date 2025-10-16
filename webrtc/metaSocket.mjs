@@ -10,7 +10,7 @@ import {
 import { metaReady, stopRecording } from "../audio/audioMixer.mjs";
 
 export async function handleMetaConnection(response) {
-  const { event, msgkartCallId, sdp, agentId, SubscriberId, BusinessId } = response;
+  const { event, msgkartCallId, sdp, agentId, SubscriberId, BusinessId, presignedUrl} = response;
   let callConn = getCallConnection(msgkartCallId);
   if (!callConn?.metaPC) {
     const pcObj = await createPeerConnection("sendrecv");
@@ -31,7 +31,7 @@ export async function handleMetaConnection(response) {
           } catch (err) {
             console.warn("bridge meta->browser failed:", err?.message || err);
           }
-        } 
+        }
       };
     }
   }
@@ -54,9 +54,9 @@ export async function handleMetaConnection(response) {
   }
 
   if (event === "metaTerminate") {
-    stopRecording(msgkartCallId);
+    await stopRecording(msgkartCallId, presignedUrl);
     removeCallConnection(msgkartCallId);
-    console.log(`🛑 Call ${msgkartCallId} ended and cleaned up`);
+    console.log(`🛑 Call ${msgkartCallId} ended and uploaded`);
     return { status: `call_disconnected ${msgkartCallId} and ${SubscriberId}` };
   }
 
