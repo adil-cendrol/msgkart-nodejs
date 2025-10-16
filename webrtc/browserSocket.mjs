@@ -1,73 +1,111 @@
 import { browserReady } from "../audio/audioMixer.mjs";
 import { finalizeSDP, createPeerConnection } from "../utils/peerUtils.mjs";
-import { createBrowserConnection, getAgentConnection, listAgentIds, removeAgentConnection } from "./connectionManager.mjs";
+import {
+    createBrowserConnection,
+    getAgentConnection,
+    listAgentIds,
+    removeAgentConnection,
+    getCallConnection,
+    getCallIdByAgent,
+} from "./connectionManager.mjs";
+
 export async function handleBrowserConnection(response) {
-    const { eventType, agentId } = response
-    // ---------- Agent (browser) offer: create or reuse agent's browserPC ----------
-    if (eventType === "agentOffer") {
+    try {
+        const { event, agentId, sdp } = response;
         if (!agentId) return { status: "missing_agent" };
-        let agentConn = getAgentConnection(agentId);
-        if (!agentConn?.browserPC) {
-            const { pc: browserPC, candidates: browserCandidates } = await createPeerConnection("sendrecv");
-            createBrowserConnection(agentId, browserPC, browserCandidates);
-            agentConn = getAgentConnection(agentId);
+        // --- Handle browser offer (from agent's browser) ---
+        if (event === "browser_offer_sdp") {
+            try {
+                let agentConn = getAgentConnection(agentId);
+                // create peer connection if not already present
+                if (!agentConn?.browserPC) {
+                    try {
+                        const { pc: browserPC, candidates: browserCandidates } =
+                            await createPeerConnection("sendrecv");
+                        createBrowserConnection(agentId, browserPC, browserCandidates);
+                        agentConn = getAgentConnection(agentId);
+                        // setup track listener
+                        browserPC.ontrack = (ev) => {
+                            try {
+                                const track = ev.track;
+                                const callId = getCallIdByAgent(agentId);
+                                const callConn = getCallConnection(callId);
+                                const metaPC = callConn?.metaPC;
 
-            // browser -> meta bridging on track
-            if (browserPC.onTrack) {
-                browserPC.onTrack.subscribe((track) => {
-                    if (track.kind === "audio" && metaPC) {
-                        try {
-                            metaPC.addTrack(track);
-                            browserReady(callId, track);
-                            console.log(`🎤 Browser audio bridged → Meta (call ${callId}, agent ${agentId})`);
+                                if (track.kind === "audio" && metaPC) {
+                                    metaPC.addTrack(track);
+                                    browserReady(callId, track);
+                                    console.log(
+                                        `🎤 Browser audio bridged → Meta (call ${callId}, agent ${agentId})`
+                                    );
+                                } else {
+                                    console.warn(`⚠️ No metaPC found for agent ${agentId}`);
+                                }
+                            } catch (err) {
+                                console.error(
+                                    `❌ Error during browser ontrack for agent ${agentId}:`,
+                                    err
+                                );
+                            }
+                        };
+                    } catch (err) {
+                        console.error(`❌ Error creating PeerConnection for ${agentId}:`, err);
+                    }
+                }
+                // set remote offer SDP
+                try {
+                    const agentBrowserPC = getAgentConnection(agentId)?.browserPC;
+                    if (!agentBrowserPC)
+                        throw new Error("browserPC not found for agent " + agentId);
+                    await agentBrowserPC.setRemoteDescription({ type: "offer", sdp });
+                } catch (err) {
+                    console.error(`❌ Failed to set remote offer SDP:`, err);
+                }
 
-                        } catch (err) {
-                            console.warn("bridge browser->meta failed:", err?.message || err);
-                        }
-                    } else {
-                        browserReady(callId, track);
-                    }
-                });
-            } else if (browserPC.ontrack !== undefined) {
-                browserPC.ontrack = (ev) => {
-                    const track = ev.track;
-                    if (track.kind === "audio" && metaPC) {
-                        try {
-                            metaPC.addTrack(track);
-                            browserReady(callId, track);
-                            console.log(`🎤 Browser audio bridged → Meta (call ${callId}, agent ${agentId})`);
-                        } catch (err) {
-                            console.warn("bridge browser->meta failed:", err?.message || err);
-                        }
-                    } else {
-                        browserReady(callId, track);
-                    }
+                // create answer SDP
+                let finalBrowserSDP = null;
+                try {
+                    const agentBrowserPC = getAgentConnection(agentId)?.browserPC;
+                    const answer = await agentBrowserPC.createAnswer();
+                    await agentBrowserPC.setLocalDescription(answer);
+                    finalBrowserSDP = finalizeSDP(
+                        agentBrowserPC,
+                        getAgentConnection(agentId)?.browserCandidates
+                    );
+                    console.log(`✅ Browser offer handled successfully for agent ${agentId}`);
+                } catch (err) {
+                    console.error(`❌ Failed to create or finalize answer SDP:`, err);
+                }
+
+                return {
+                    agentId,
+                    sdp: finalBrowserSDP,
+                    sdpType: "answer",
+                    status: "agent_answer_created",
                 };
+            } catch (err) {
+                console.error(`❌ Error handling browser_offer_sdp for ${agentId}:`, err);
+                return { status: "error", message: err.message };
             }
         }
-        const agentBrowserPC = getAgentConnection(agentId).browserPC;
-        await agentBrowserPC.setRemoteDescription({ type: "offer", sdp });
-        const answer = await agentBrowserPC.createAnswer();
-        await agentBrowserPC.setLocalDescription(answer);
-        const finalBrowserSDP = finalizeSDP(agentBrowserPC, getAgentConnection(agentId)?.browserCandidates);
-        return { callId, agentId, sdp: finalBrowserSDP, status: "agent_answer_created" };
-    }
 
-    if (eventType === "agentAnswer") {
-        if (!agentId) return { status: "missing_agent" };
-        const agentConn = getAgentConnection(agentId);
-        if (agentConn?.browserPC) {
-            await agentConn.browserPC.setRemoteDescription({ type: "answer", sdp });
-            console.log(`✅ Browser PC remote description set for agent ${agentId}`);
+        // --- Handle agent removal ---
+        if (event === "agent_removed") {
+            try {
+                const listOfAgents = listAgentIds();
+                removeAgentConnection(agentId);
+                console.log(`👋 Agent ${agentId} removed`);
+                console.log("Available agents:", listOfAgents);
+                return { status: "agent_removed" };
+            } catch (err) {
+                console.error(`❌ Error removing agent ${agentId}:`, err);
+                return { status: "error_removing_agent", message: err.message };
+            }
         }
-        return { status: "agent_answer_set" };
-    }
 
-    if (event === "agent_removed") {
-        const listofAgent = listAgentIds()
-        removeAgentConnection(agentId);
-        console.log(`👋 Agent ${agentId} removed`);
-        console.log(listofAgent, "list of avaibale agent is there")
-        return { status: "agent_removed" };
+        return { status: "no_event_match" };
+    } catch (err) {
+        console.error(`❌ Global error in handleBrowserConnection:`, err);
+        return { status: "fatal_error", message: err.message };
     }
 }

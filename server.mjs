@@ -19,7 +19,7 @@ app.post("/api/webrtc/session-init", async (req, res) => {
     }
 });
 
-app.post("/api", async (req, res) => {
+app.post("/api/v1/webrtc/connect", async (req, res) => {
     console.log(req.body, "req body")
     try {
         const result = await handleBrowserConnection(req.body);
