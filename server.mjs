@@ -28,6 +28,8 @@ app.post("/api/v1/webrtc/connect", async (req, res) => {
         switch (result.status) {
             case "missing_agent":
             case "no_event_match":
+            case "event_missing":
+            case "sdp_missing":
                 httpStatus = 400; // Bad Request
                 break;
             case "error":

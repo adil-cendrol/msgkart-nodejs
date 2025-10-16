@@ -13,6 +13,8 @@ export async function handleBrowserConnection(response) {
     try {
         const { event, agentId, sdp } = response;
         if (!agentId) return { status: "missing_agent" };
+        if (!event) return { status: "event_missing" }
+        if (!sdp) return { status: "sdp_missing" }
         if (event === "browser_offer_sdp") {
             try {
                 let agentConn = getAgentConnection(agentId);
