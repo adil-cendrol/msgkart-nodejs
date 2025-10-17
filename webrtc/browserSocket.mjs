@@ -40,13 +40,14 @@ export async function handleBrowserConnection(response) {
                                     console.log(
                                         `🎤 Browser audio bridged → Meta (call ${callId}, agent ${agentId})`
                                     );
+                                    track.onReceiveRtp.subscribe((rtp) => {
+                                        console.log("📥 RTP from browser:", rtp.header.timestamp)
+                                        // if (opusMeta) opusMeta.write(rtp.payload);
+                                    });
                                 } else {
                                     console.warn(`⚠️ No metaPC found for agent ${agentId}`);
                                 }
-                                track.onReceiveRtp.subscribe((rtp) => {
-                                    console.log("📥 RTP from browser:", rtp.header.timestamp)
-                                    // if (opusMeta) opusMeta.write(rtp.payload);
-                                });
+
 
                             } catch (err) {
                                 console.error(
