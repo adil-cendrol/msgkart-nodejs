@@ -5,7 +5,8 @@ import {
   getCallConnection,
   getAgentConnection,
   removeCallConnection,
-  mapAgentToCall
+  mapAgentToCall,
+  listAgentIds
 } from "./connectionManager.mjs";
 
 import { metaReady, stopRecording } from "../audio/audioMixer.mjs";
@@ -36,7 +37,10 @@ export async function handleMetaConnection(response) {
       metaPC.ontrack = (ev) => {
         try {
           const track = ev.track;
-          const agentConn = getAgentConnection(agentId);
+          console.log(`Adil nawaz afjkmdf===agent ${agentId}`);
+          const listofagents = listAgentIds();
+          console.log(listofagents, "list of agents available");
+          const agentConn = getAgentConnection(agentId) || "50a5ab07-8111-4ea4-9688-31ec1bde8322";
 
           console.log(`📶 Meta ontrack triggered for call ${msgkartCallId}, agent ${agentId}`);
           console.log(agentConn, "agent connection details");

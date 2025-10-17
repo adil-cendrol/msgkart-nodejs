@@ -100,7 +100,7 @@ export async function handleBrowserConnection(response) {
             try {
                 removeAgentConnection(agentId);
                 console.log(`👋 Agent ${agentId} removed`);
-                console.log("Available agents:", listAgentIds());
+                // console.log("Available agents:", listAgentIds());
                 return { status: "agent_removed" };
             } catch (err) {
                 console.error(`❌ Error removing agent ${agentId}:`, err);
