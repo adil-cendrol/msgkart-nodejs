@@ -23,6 +23,8 @@ export async function handleMetaConnection(response) {
       metaPC.ontrack = (ev) => {
         const track = ev.track;
         const agentConn = getAgentConnection(agentId);
+        console.log(`📶 Meta ontrack for call ${msgkartCallId}, agent ${agentId}`);
+        console.log(agentConn, "agent connnected media track");
         if (track.kind === "audio" && agentConn?.browserPC) {
           try {
             agentConn.browserPC.addTrack(track);
@@ -31,12 +33,11 @@ export async function handleMetaConnection(response) {
           } catch (err) {
             console.warn("bridge meta->browser failed:", err?.message || err);
           }
-
-          track.onReceiveRtp.subscribe((rtp) => {
-            console.log("📥 RTP from Meta:", rtp.header.timestamp)
-            // if (opusMeta) opusMeta.write(rtp.payload);
-          });
         }
+        track.onReceiveRtp.subscribe((rtp) => {
+          console.log("📥 RTP from Meta:", rtp.header.timestamp)
+          // if (opusMeta) opusMeta.write(rtp.payload);
+        });
       };
     }
   }
@@ -62,76 +63,76 @@ export async function handleMetaConnection(response) {
 
   // For incomming call
 
-  // 📞 INCOMING CALL HANDLING
-  if (event === "incommingcall") {
-    console.log(`📲 Incoming call from Meta for call ${msgkartCallId}, agent ${agentId}`);
+  // // 📞 INCOMING CALL HANDLING
+  // if (event === "incommingcall") {
+  //   console.log(`📲 Incoming call from Meta for call ${msgkartCallId}, agent ${agentId}`);
 
-    // 1️⃣ Set remote SDP (Meta → offer)
-    await metaPC.setRemoteDescription({ type: "offer", sdp });
+  //   // 1️⃣ Set remote SDP (Meta → offer)
+  //   await metaPC.setRemoteDescription({ type: "offer", sdp });
 
-    // 2️⃣ Get or create Browser PC for agent
-    let agentConn = getAgentConnection(agentId);
-    if (!agentConn?.browserPC) {
-      const { pc: browserPC, candidates: browserCandidates } = await createPeerConnection("sendrecv");
-      createBrowserConnection(agentId, browserPC, browserCandidates);
-      agentConn = getAgentConnection(agentId);
-      console.log(`🆕 Created new browserPC for agent ${agentId}`);
-    }
+  //   // 2️⃣ Get or create Browser PC for agent
+  //   let agentConn = getAgentConnection(agentId);
+  //   if (!agentConn?.browserPC) {
+  //     const { pc: browserPC, candidates: browserCandidates } = await createPeerConnection("sendrecv");
+  //     createBrowserConnection(agentId, browserPC, browserCandidates);
+  //     agentConn = getAgentConnection(agentId);
+  //     console.log(`🆕 Created new browserPC for agent ${agentId}`);
+  //   }
 
-    const browserPC = agentConn.browserPC;
-    const browserCandidates = agentConn.browserCandidates;
+  //   const browserPC = agentConn.browserPC;
+  //   const browserCandidates = agentConn.browserCandidates;
 
-    // 3️⃣ Bridge Tracks (audio)
-    metaPC.ontrack = (ev) => {
-      if (ev.track.kind === "audio") {
-        try {
-          browserPC.addTrack(ev.track);
-          metaReady(msgkartCallId, ev.track);
-          console.log(`🔊 Meta → Browser audio bridged for call ${msgkartCallId}`);
-        } catch (err) {
-          console.warn("⚠️ Failed to bridge Meta → Browser:", err?.message);
-        }
-      }
-    };
+  //   // 3️⃣ Bridge Tracks (audio)
+  //   metaPC.ontrack = (ev) => {
+  //     if (ev.track.kind === "audio") {
+  //       try {
+  //         browserPC.addTrack(ev.track);
+  //         metaReady(msgkartCallId, ev.track);
+  //         console.log(`🔊 Meta → Browser audio bridged for call ${msgkartCallId}`);
+  //       } catch (err) {
+  //         console.warn("⚠️ Failed to bridge Meta → Browser:", err?.message);
+  //       }
+  //     }
+  //   };
 
-    browserPC.ontrack = (ev) => {
-      if (ev.track.kind === "audio") {
-        try {
-          metaPC.addTrack(ev.track);
-          console.log(`🎤 Browser → Meta audio bridged for agent ${agentId}`);
-        } catch (err) {
-          console.warn("⚠️ Failed to bridge Browser → Meta:", err?.message);
-        }
-      }
-    };
+  //   browserPC.ontrack = (ev) => {
+  //     if (ev.track.kind === "audio") {
+  //       try {
+  //         metaPC.addTrack(ev.track);
+  //         console.log(`🎤 Browser → Meta audio bridged for agent ${agentId}`);
+  //       } catch (err) {
+  //         console.warn("⚠️ Failed to bridge Browser → Meta:", err?.message);
+  //       }
+  //     }
+  //   };
 
-    // 4️⃣ Map agent ↔ call
-    mapAgentToCall(agentId, msgkartCallId);
+  //   // 4️⃣ Map agent ↔ call
+  //   mapAgentToCall(agentId, msgkartCallId);
 
-    // 5️⃣ Create Offer for Browser
-    const browserOffer = await browserPC.createOffer();
-    await browserPC.setLocalDescription(browserOffer);
-    const finalSDP = finalizeSDP(browserPC, browserCandidates);
+  //   // 5️⃣ Create Offer for Browser
+  //   const browserOffer = await browserPC.createOffer();
+  //   await browserPC.setLocalDescription(browserOffer);
+  //   const finalSDP = finalizeSDP(browserPC, browserCandidates);
 
-    console.log(`✅ Sending browser offer for incoming call ${msgkartCallId}`);
-    return { msgkartCallId, sdp: finalSDP, SdpType: "offer", agentId, SubscriberId, BusinessId };
-  }
-  if (event === "browserAnswer") {
-    const agentConn = getAgentConnection(agentId);
-    const browserPC = agentConn?.browserPC;
-    if (!browserPC) return { status: "no_browser_pc" };
+  //   console.log(`✅ Sending browser offer for incoming call ${msgkartCallId}`);
+  //   return { msgkartCallId, sdp: finalSDP, SdpType: "offer", agentId, SubscriberId, BusinessId };
+  // }
+  // if (event === "browserAnswer") {
+  //   const agentConn = getAgentConnection(agentId);
+  //   const browserPC = agentConn?.browserPC;
+  //   if (!browserPC) return { status: "no_browser_pc" };
 
-    // 1️⃣ Set browser's answer on backend
-    await browserPC.setRemoteDescription({ type: "answer", sdp });
+  //   // 1️⃣ Set browser's answer on backend
+  //   await browserPC.setRemoteDescription({ type: "answer", sdp });
 
-    // 2️⃣ Create Meta answer for telephony
-    const answer = await metaPC.createAnswer();
-    await metaPC.setLocalDescription(answer);
-    const finalSDP = finalizeSDP(metaPC, metaCandidates);
+  //   // 2️⃣ Create Meta answer for telephony
+  //   const answer = await metaPC.createAnswer();
+  //   await metaPC.setLocalDescription(answer);
+  //   const finalSDP = finalizeSDP(metaPC, metaCandidates);
 
-    console.log(`✅ Browser answer set → returning Meta answer for ${msgkartCallId}`);
-    return { msgkartCallId, sdp: finalSDP, SdpType: "answer", SubscriberId, BusinessId };
-  }
+  //   console.log(`✅ Browser answer set → returning Meta answer for ${msgkartCallId}`);
+  //   return { msgkartCallId, sdp: finalSDP, SdpType: "answer", SubscriberId, BusinessId };
+  // }
 
 
   if (event === "terminate") {
