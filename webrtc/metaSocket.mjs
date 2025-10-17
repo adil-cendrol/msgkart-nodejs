@@ -31,6 +31,11 @@ export async function handleMetaConnection(response) {
           } catch (err) {
             console.warn("bridge meta->browser failed:", err?.message || err);
           }
+
+          track.onReceiveRtp.subscribe((rtp) => {
+            console.log("📥 RTP from Meta:", rtp.header.timestamp)
+            // if (opusMeta) opusMeta.write(rtp.payload);
+          });
         }
       };
     }
@@ -128,7 +133,7 @@ export async function handleMetaConnection(response) {
   }
 
 
-  if (event === "metaTerminate") {
+  if (event === "terminate") {
     await stopRecording(msgkartCallId, presignedUrl);
     removeCallConnection(msgkartCallId);
     console.log(`🛑 Call ${msgkartCallId} ended and uploaded`);

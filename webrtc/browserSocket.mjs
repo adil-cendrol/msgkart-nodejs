@@ -32,6 +32,7 @@ export async function handleBrowserConnection(response) {
                                 const callId = getCallIdByAgent(agentId);
                                 const callConn = getCallConnection(callId);
                                 const metaPC = callConn?.metaPC;
+                                console.log(`📶 Browser ontrack for agent ${agentId}, call ${callId}`);
 
                                 if (track.kind === "audio" && metaPC) {
                                     metaPC.addTrack(track);
@@ -42,6 +43,11 @@ export async function handleBrowserConnection(response) {
                                 } else {
                                     console.warn(`⚠️ No metaPC found for agent ${agentId}`);
                                 }
+                                track.onReceiveRtp.subscribe((rtp) => {
+                                    console.log("📥 RTP from browser:", rtp.header.timestamp)
+                                    // if (opusMeta) opusMeta.write(rtp.payload);
+                                });
+
                             } catch (err) {
                                 console.error(
                                     `❌ Error during browser ontrack for agent ${agentId}:`,
