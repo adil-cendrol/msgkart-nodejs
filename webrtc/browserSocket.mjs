@@ -8,6 +8,7 @@ import {
     removeAgentConnection,
     getCallConnection,
     getCallIdByAgent,
+    pendingTracks,
 } from "./connectionManager.mjs";
 
 /**
@@ -32,7 +33,36 @@ export async function handleBrowserConnection(response) {
 
         const browserPC = agentConn.browserPC;
 
-        // ✅ Always attach ontrack listener once
+        // // ✅ Always attach ontrack listener once
+        // if (!browserPC._ontrackSet) {
+        //     browserPC._ontrackSet = true;
+        //     browserPC.ontrack = (ev) => {
+        //         try {
+        //             const track = ev.track;
+        //             const callId = getCallIdByAgent(agentId);
+        //             const callConn = getCallConnection(callId);
+        //             const metaPC = callConn?.metaPC;
+
+        //             console.log(`📶 Browser ontrack (agent ${agentId}, call ${callId})`);
+        //             console.log(`🎯  ontrack triggered → agent=${agentId}, callId=${callId}, trackKind=${track.kind}`);
+        //             if (track.kind === "audio" && metaPC) {
+        //                 metaPC.addTrack(track);
+        //                 browserReady(callId, track);
+        //                 console.log(`🎤 Browser audio bridged → Meta (call ${callId}, agent ${agentId})`);
+        //                 if (track.onReceiveRtp) {
+        //                     track.onReceiveRtp.subscribe((rtp) => {
+        //                         console.log("📥 RTP from browser:", rtp.header.timestamp);
+        //                     });
+        //                 }
+        //             } else {
+        //                 console.warn(`⚠️ No metaPC found or invalid track kind for agent ${agentId}`);
+        //             }
+        //         } catch (err) {
+        //             console.error(`❌ Error in browser ontrack for agent ${agentId}:`, err);
+        //         }
+        //     };
+        // }
+
         if (!browserPC._ontrackSet) {
             browserPC._ontrackSet = true;
             browserPC.ontrack = (ev) => {
@@ -42,19 +72,18 @@ export async function handleBrowserConnection(response) {
                     const callConn = getCallConnection(callId);
                     const metaPC = callConn?.metaPC;
 
-                    console.log(`📶 Browser ontrack (agent ${agentId}, call ${callId})`);
-                    console.log(`🎯  ontrack triggered → agent=${agentId}, callId=${callId}, trackKind=${track.kind}`);
-                    if (track.kind === "audio" && metaPC) {
-                        metaPC.addTrack(track);
-                        browserReady(callId, track);
-                        console.log(`🎤 Browser audio bridged → Meta (call ${callId}, agent ${agentId})`);
-                        if (track.onReceiveRtp) {
-                            track.onReceiveRtp.subscribe((rtp) => {
-                                console.log("📥 RTP from browser:", rtp.header.timestamp);
-                            });
+                    if (track.kind === "audio") {
+                        if (metaPC) {
+                            // Meta is ready → bridge immediately
+                            metaPC.addTrack(track);
+                            browserReady(callId, track);
+                            console.log(`🎤 Browser audio bridged → Meta (call ${callId}, agent ${agentId})`);
+                        } else {
+                            // Meta not ready → store pending
+                            if (!pendingTracks.has(agentId)) pendingTracks.set(agentId, []);
+                            pendingTracks.get(agentId).push(track);
+                            console.log(`⏳ Browser audio track pending for agent ${agentId}`);
                         }
-                    } else {
-                        console.warn(`⚠️ No metaPC found or invalid track kind for agent ${agentId}`);
                     }
                 } catch (err) {
                     console.error(`❌ Error in browser ontrack for agent ${agentId}:`, err);

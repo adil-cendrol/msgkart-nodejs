@@ -109,21 +109,40 @@ export async function handleMetaConnection(response) {
       console.log(`📞 Setting Meta answer SDP for call ${msgkartCallId}`);
       if (agentId && msgkartCallId) mapAgentToCall(agentId, msgkartCallId); // 🔥 Auto link
       await metaPC.setRemoteDescription({ type: "answer", sdp });
-      console.log(`✅ Meta PC remote description set for call ${msgkartCallId}, agentId ${agentId}`);
-      const agentConn = getAgentConnection(agentId);
-      if (agentConn?.browserPC) {
-        agentConn.browserPC.getSenders().forEach(sender => {
-          const track = sender.track;
-          if (track && track.kind === "audio") {
-            const alreadyAdded = agentConn.browserPC.getSenders().some(s => s.track === track);
-            if (!alreadyAdded) {
-              agentConn.browserPC.addTrack(track);
+
+      if (event === "meta_answer_sdp") {
+        console.log(`📞 Setting Meta answer SDP for call ${msgkartCallId}`);
+        if (agentId && msgkartCallId) mapAgentToCall(agentId, msgkartCallId);
+
+        await metaPC.setRemoteDescription({ type: "answer", sdp });
+
+        const agentConn = getAgentConnection(agentId);
+
+        // 1️⃣ Bridge existing browser tracks
+        if (agentConn?.browserPC) {
+          agentConn.browserPC.getSenders().forEach(sender => {
+            const track = sender.track;
+            if (track && track.kind === "audio" && !metaPC.getSenders().some(s => s.track === track)) {
+              metaPC.addTrack(track);
               console.log(`🎤 Existing browser audio bridged → Meta (call ${msgkartCallId}, agent ${agentId})`);
               browserReady(msgkartCallId, track);
             }
-          }
-        });
+          });
+        }
+
+        // 2️⃣ Bridge pending browser tracks
+        if (pendingTracks.has(agentId)) {
+          pendingTracks.get(agentId).forEach(track => {
+            metaPC.addTrack(track);
+            browserReady(msgkartCallId, track);
+            console.log(`🎤 Pending browser audio bridged → Meta (call ${msgkartCallId}, agent ${agentId})`);
+          });
+          pendingTracks.delete(agentId);
+        }
+
+        return { status: "meta_answer_set" };
       }
+
       return { status: "meta_answer_set" };
     }
 

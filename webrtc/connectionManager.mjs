@@ -2,7 +2,7 @@
 export const calls = new Map();   // callId => { metaPC, metaCandidates }
 export const agents = new Map();  // agentId => { browserPC, browserCandidates }
 export const agentToCall = new Map(); // 🔥 NEW: agentId => callId
-
+export const pendingTracks = new Map(); 
 /** Meta (per-call) */
 export function createMetaConnection(callId, pc, candidates = null) {
   if (!calls.has(callId)) calls.set(callId, {});
