@@ -4,9 +4,10 @@ import { finalizeSDP, createPeerConnection } from "../utils/peerUtils.mjs";
 import {
     createBrowserConnection,
     getAgentConnection,
+    listAgentIds,
     removeAgentConnection,
     getCallConnection,
-    getCallIdByAgent
+    getCallIdByAgent,
 } from "./connectionManager.mjs";
 
 /**
@@ -18,7 +19,7 @@ export async function handleBrowserConnection(response) {
         if (!agentId) return { status: "missing_agent" };
         if (!event) return { status: "event_missing" };
 
-        // ✅ Ensure agent has a PeerConnection ready
+        // ✅ Always ensure agent has a PeerConnection ready
         let agentConn = getAgentConnection(agentId);
         if (!agentConn?.browserPC) {
             const { pc: browserPC, candidates: browserCandidates } =
@@ -31,26 +32,27 @@ export async function handleBrowserConnection(response) {
 
         const browserPC = agentConn.browserPC;
 
-        // ✅ Attach ontrack listener once
+        // ✅ Always attach ontrack listener once
         if (!browserPC._ontrackSet) {
             browserPC._ontrackSet = true;
             browserPC.ontrack = (ev) => {
                 try {
                     const track = ev.track;
                     const callId = getCallIdByAgent(agentId);
-
-                    if (!callId) {
-                        console.warn(`⚠️ No callId yet for agent ${agentId}, track cannot be bridged`);
-                        return;
-                    }
-
                     const callConn = getCallConnection(callId);
                     const metaPC = callConn?.metaPC;
 
+                    console.log(`📶 Browser ontrack (agent ${agentId}, call ${callId})`);
+                    console.log(`🎯  ontrack triggered → agent=${agentId}, callId=${callId}, trackKind=${track.kind}`);
                     if (track.kind === "audio" && metaPC) {
                         metaPC.addTrack(track);
                         browserReady(callId, track);
                         console.log(`🎤 Browser audio bridged → Meta (call ${callId}, agent ${agentId})`);
+                        if (track.onReceiveRtp) {
+                            track.onReceiveRtp.subscribe((rtp) => {
+                                console.log("📥 RTP from browser:", rtp.header.timestamp);
+                            });
+                        }
                     } else {
                         console.warn(`⚠️ No metaPC found or invalid track kind for agent ${agentId}`);
                     }
@@ -64,28 +66,45 @@ export async function handleBrowserConnection(response) {
         if (event === "browser_offer_sdp") {
             if (!sdp) return { status: "sdp_missing" };
 
-            await browserPC.setRemoteDescription({ type: "offer", sdp });
-            const answer = await browserPC.createAnswer();
-            await browserPC.setLocalDescription(answer);
+            try {
+                await browserPC.setRemoteDescription({ type: "offer", sdp });
 
-            const finalBrowserSDP = finalizeSDP(browserPC, browserCandidates);
-            console.log(`✅ Browser offer handled successfully for agent ${agentId}`);
+                const answer = await browserPC.createAnswer();
+                await browserPC.setLocalDescription(answer);
 
-            return {
-                agentId,
-                sdp: finalBrowserSDP,
-                sdpType: "answer",
-                status: "agent_answer_created",
-            };
+                const finalBrowserSDP = finalizeSDP(
+                    browserPC,
+                    getAgentConnection(agentId)?.browserCandidates
+                );
+
+                console.log(`✅ Browser offer handled successfully for agent ${agentId}`);
+
+                return {
+                    agentId,
+                    sdp: finalBrowserSDP,
+                    sdpType: "answer",
+                    status: "agent_answer_created",
+                };
+            } catch (err) {
+                console.error(`❌ Error handling browser_offer_sdp for ${agentId}:`, err);
+                return { status: "error", message: err.message };
+            }
         }
 
         // --- Handle browser termination ---
         if (event === "browser_terminate") {
-            removeAgentConnection(agentId);
-            console.log(`👋 Agent ${agentId} removed`);
-            return { status: "agent_removed" };
+            try {
+                removeAgentConnection(agentId);
+                console.log(`👋 Agent ${agentId} removed`);
+                // console.log("Available agents:", listAgentIds());
+                return { status: "agent_removed" };
+            } catch (err) {
+                console.error(`❌ Error removing agent ${agentId}:`, err);
+                return { status: "error_removing_agent", message: err.message };
+            }
         }
 
+        // --- Unknown event ---
         return { status: "no_event_match" };
 
     } catch (err) {
