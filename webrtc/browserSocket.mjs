@@ -19,7 +19,7 @@ export async function handleBrowserConnection(response) {
         if (!agentId) return { status: "missing_agent" };
         if (!event) return { status: "event_missing" };
 
-        // ✅ Always ensure agent has a PeerConnection ready
+        // ✅ Ensure agent has a PeerConnection ready
         let agentConn = getAgentConnection(agentId);
         if (!agentConn?.browserPC) {
             const { pc: browserPC, candidates: browserCandidates } =
@@ -32,7 +32,11 @@ export async function handleBrowserConnection(response) {
 
         const browserPC = agentConn.browserPC;
 
-        // ✅ Always attach ontrack listener once
+        const callId = getCallIdByAgent(agentId);
+        const callConn = getCallConnection(callId);
+        const metaPC = callConn?.metaPC;
+
+        // ✅ Attach ontrack listener once (for remote tracks in the future)
         if (!browserPC._ontrackSet) {
             browserPC._ontrackSet = true;
             browserPC.ontrack = (ev) => {
@@ -43,19 +47,14 @@ export async function handleBrowserConnection(response) {
                     const metaPC = callConn?.metaPC;
 
                     console.log(`📶 Browser ontrack (agent ${agentId}, call ${callId})`);
-                    console.log(`🎯  ontrack triggered → agent=${agentId}, callId=${callId}, trackKind=${track.kind}`);
+                    console.log(`🎯 ontrack triggered → agent=${agentId}, callId=${callId}, trackKind=${track.kind}`);
 
-                    // 🔊 Bridge audio from Browser → Meta
                     if (track.kind === "audio" && metaPC) {
-                        metaPC.addTrack(track);
-                        browserReady(callId, track);
-                        console.log(`🎤 Browser audio bridged → Meta (call ${callId}, agent ${agentId})`);
-
-                        // Optional RTP packet log
-                        if (track.onReceiveRtp) {
-                            track.onReceiveRtp.subscribe((rtp) => {
-                                console.log("📥 RTP from browser:", rtp.header.timestamp);
-                            });
+                        const alreadyAdded = metaPC.getSenders().some(s => s.track === track);
+                        if (!alreadyAdded) {
+                            metaPC.addTrack(track);
+                            browserReady(callId, track);
+                            console.log(`🎤 Browser audio bridged → Meta (call ${callId}, agent ${agentId})`);
                         }
                     } else {
                         console.warn(`⚠️ No metaPC found or invalid track kind for agent ${agentId}`);
@@ -64,6 +63,21 @@ export async function handleBrowserConnection(response) {
                     console.error(`❌ Error in browser ontrack for agent ${agentId}:`, err);
                 }
             };
+        }
+
+        // ✅ Manually bridge already-existing browser tracks to metaPC
+        if (metaPC) {
+            browserPC.getSenders().forEach(sender => {
+                const track = sender.track;
+                if (track && track.kind === "audio") {
+                    const alreadyAdded = metaPC.getSenders().some(s => s.track === track);
+                    if (!alreadyAdded) {
+                        metaPC.addTrack(track);
+                        browserReady(callId, track);
+                        console.log(`🎤 Existing browser audio manually bridged → Meta (call ${callId}, agent ${agentId})`);
+                    }
+                }
+            });
         }
 
         // --- Handle browser offer ---
@@ -100,7 +114,6 @@ export async function handleBrowserConnection(response) {
             try {
                 removeAgentConnection(agentId);
                 console.log(`👋 Agent ${agentId} removed`);
-                // console.log("Available agents:", listAgentIds());
                 return { status: "agent_removed" };
             } catch (err) {
                 console.error(`❌ Error removing agent ${agentId}:`, err);
