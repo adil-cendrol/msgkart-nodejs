@@ -65,6 +65,7 @@ export async function handleMetaConnection(response) {
       metaPC.ontrack = (ev) => {
         try {
           const track = ev.track;
+          console.log(response, "resposne for this this track meahesh")
 
           // 🔹 Dynamically find the agent mapped to this call
           const agentIdForCall = [...agentToCall.entries()]
