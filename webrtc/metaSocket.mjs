@@ -115,9 +115,9 @@ export async function handleMetaConnection(response) {
         agentConn.browserPC.getSenders().forEach(sender => {
           const track = sender.track;
           if (track && track.kind === "audio") {
-            const alreadyAdded = metaPC.getSenders().some(s => s.track === track);
+            const alreadyAdded = agentConn.browserPC.getSenders().some(s => s.track === track);
             if (!alreadyAdded) {
-              metaPC.addTrack(track);
+              agentConn.browserPC.addTrack(track);
               console.log(`🎤 Existing browser audio bridged → Meta (call ${msgkartCallId}, agent ${agentId})`);
               browserReady(msgkartCallId, track);
             }
