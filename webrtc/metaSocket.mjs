@@ -108,10 +108,9 @@ export async function handleMetaConnection(response) {
     // 4️⃣ Handle Meta SDP answer
     if (event === "meta_answer_sdp") {
       console.log(`📞 Setting Meta answer SDP for call ${msgkartCallId}`);
+       if (agentId && msgkartCallId) mapAgentToCall(agentId, msgkartCallId); // 🔥 Auto link
       await metaPC.setRemoteDescription({ type: "answer", sdp });
-      console.log(`✅ Meta PC remote description set for call ${msgkartCallId}, agentId ${agentId}`);
-
-      if (agentId && msgkartCallId) mapAgentToCall(agentId, msgkartCallId); // 🔥 Auto link
+      console.log(`✅ Meta PC remote description set for call ${msgkartCallId}, agentId ${agentId}`);     
       return { status: "meta_answer_set" };
     }
 
