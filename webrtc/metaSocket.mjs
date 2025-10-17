@@ -8,7 +8,6 @@ import {
   mapAgentToCall,
   listAgentIds
 } from "./connectionManager.mjs";
-
 import { metaReady, stopRecording } from "../audio/audioMixer.mjs";
 
 /**
@@ -31,22 +30,22 @@ export async function handleMetaConnection(response) {
     const metaPC = callConn.metaPC;
     const metaCandidates = callConn.metaCandidates;
 
-    // 2️⃣ Always attach ontrack once
+    // 2️⃣ Attach ontrack once
     if (!metaPC._ontrackSet) {
       metaPC._ontrackSet = true;
       metaPC.ontrack = (ev) => {
         try {
           const track = ev.track;
-          console.log(`Adil nawaz afjkmdf===agent ${agentId}`);
-          const listofagents = listAgentIds();
-          console.log(listofagents, "list of agents available");
-          const agentConn = getAgentConnection(agentId) || "50a5ab07-8111-4ea4-9688-31ec1bde8322";
+          console.log(response, "resposne for this this track")
+          console.log(response?.agentId, "agent id for this this track");
+    
+          const currentAgentConn = getAgentConnection(agentId); // ✅ always get latest
 
           console.log(`📶 Meta ontrack triggered for call ${msgkartCallId}, agent ${agentId}`);
-          console.log(agentConn, "agent connection details");
+          console.log(currentAgentConn, "agent connection details");
 
-          if (track.kind === "audio" && agentConn?.browserPC) {
-            agentConn.browserPC.addTrack(track);
+          if (track.kind === "audio" && currentAgentConn?.browserPC) {
+            currentAgentConn.browserPC.addTrack(track);
             metaReady(msgkartCallId, track);
             console.log(`🔊 Meta audio bridged → Browser (call ${msgkartCallId}, agent ${agentId})`);
 
@@ -64,7 +63,7 @@ export async function handleMetaConnection(response) {
       };
     }
 
-    // 3️⃣ Handle SDP request from Meta
+    // 3️⃣ Handle Meta SDP offer request
     if (event === "request_meta_offer_sdp") {
       const offer = await metaPC.createOffer();
       await metaPC.setLocalDescription(offer);
@@ -74,7 +73,7 @@ export async function handleMetaConnection(response) {
       return { msgkartCallId, sdp: finalSDP, SdpType: "offer", SubscriberId, BusinessId };
     }
 
-    // 4️⃣ Handle Meta answer from browser/telephony
+    // 4️⃣ Handle Meta SDP answer
     if (event === "meta_answer_sdp") {
       console.log(`📞 Setting Meta answer SDP for call ${msgkartCallId}`);
       await metaPC.setRemoteDescription({ type: "answer", sdp });
@@ -84,7 +83,7 @@ export async function handleMetaConnection(response) {
       return { status: "meta_answer_set" };
     }
 
-    // 5️⃣ Handle call termination
+    // 5️⃣ Terminate call
     if (event === "terminate") {
       await stopRecording(msgkartCallId, presignedUrl);
       removeCallConnection(msgkartCallId);
@@ -93,7 +92,6 @@ export async function handleMetaConnection(response) {
     }
 
     return { status: "no event type match" };
-
   } catch (err) {
     console.error(`❌ Global error in handleMetaConnection:`, err);
     return { status: "fatal_error", message: err.message };
