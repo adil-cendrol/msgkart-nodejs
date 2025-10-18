@@ -1,8 +1,7 @@
-// connectionManager.mjs
 export const calls = new Map();   // callId => { metaPC, metaCandidates }
 export const agents = new Map();  // agentId => { browserPC, browserCandidates }
-export const agentToCall = new Map(); // 🔥 NEW: agentId => callId
-export const pendingTracks = new Map(); 
+export const agentToCall = new Map(); // agentId => callId
+
 /** Meta (per-call) */
 export function createMetaConnection(callId, pc, candidates = null) {
   if (!calls.has(callId)) calls.set(callId, {});
@@ -12,7 +11,6 @@ export function createMetaConnection(callId, pc, candidates = null) {
   calls.set(callId, conn);
   return conn;
 }
-
 export function getCallConnection(callId) {
   return calls.get(callId);
 }
@@ -26,21 +24,18 @@ export function createBrowserConnection(agentId, pc, candidates = null) {
   agents.set(agentId, conn);
   return conn;
 }
-
 export function getAgentConnection(agentId) {
   return agents.get(agentId);
 }
 
-/** 🔥 Map agent <-> call */
+/** Map agent <-> call */
 export function mapAgentToCall(agentId, callId) {
   agentToCall.set(agentId, callId);
   console.log(`🔗 Mapped agent ${agentId} → call ${callId}`);
 }
-
 export function getCallIdByAgent(agentId) {
   return agentToCall.get(agentId);
 }
-
 export function unmapAgent(agentId) {
   agentToCall.delete(agentId);
 }
@@ -49,15 +44,11 @@ export function unmapAgent(agentId) {
 export function removeCallConnection(callId) {
   const conn = calls.get(callId);
   if (!conn) return false;
-  try { conn.metaPC?.close?.(); } catch (err) { console.warn(`close metaPC error:`, err?.message || err); }
+  try { conn.metaPC?.close?.(); } catch (err) { console.warn(err?.message || err); }
   calls.delete(callId);
-
-  // 🔥 Remove any agent mappings linked to this call
+  // Remove agent mappings linked to this call
   for (const [agentId, cId] of agentToCall.entries()) {
-    if (cId === callId) {
-      agentToCall.delete(agentId);
-      console.log(`🧹 Unmapped agent ${agentId} (call ${callId} ended)`);
-    }
+    if (cId === callId) agentToCall.delete(agentId);
   }
   return true;
 }
@@ -66,9 +57,9 @@ export function removeCallConnection(callId) {
 export function removeAgentConnection(agentId) {
   const conn = agents.get(agentId);
   if (!conn) return false;
-  try { conn.browserPC?.close?.(); } catch (err) { console.warn(`close browserPC error:`, err?.message || err); }
+  try { conn.browserPC?.close?.(); } catch (err) { console.warn(err?.message || err); }
   agents.delete(agentId);
-  agentToCall.delete(agentId); // 🔥 cleanup
+  agentToCall.delete(agentId);
   return true;
 }
 
