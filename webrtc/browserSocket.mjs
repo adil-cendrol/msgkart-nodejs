@@ -1,3 +1,14 @@
+import { browserReady } from "../audio/audioMixer.mjs";
+import { finalizeSDP, createPeerConnection } from "../utils/peerUtils.mjs";
+import {
+    createBrowserConnection,
+    getAgentConnection,
+    removeAgentConnection
+} from "./connectionManager.mjs";
+
+/**
+ * Handles browser-side WebRTC connections.
+ */
 // handleBrowserConnection.mjs
 export async function handleBrowserConnection(response) {
     const { event, agentId, sdp } = response;
