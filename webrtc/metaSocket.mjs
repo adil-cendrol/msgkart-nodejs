@@ -42,7 +42,7 @@ export async function handleMetaConnection(response) {
           // Find the agent mapped to this call
           const agentIdForCall = [...agentToCall.entries()]
             .find(([agentId, cId]) => cId === msgkartCallId)?.[0];
-            console.log("Agent ID for call:", agentIdForCall);
+          console.log("Agent ID for call:", agentIdForCall);
 
           const agentConn = getAgentConnection(agentIdForCall);
           const browserPC = agentConn.browserPC;
@@ -57,13 +57,14 @@ export async function handleMetaConnection(response) {
           } else {
             console.warn(`⚠️ Track already added or invalid for agent ${agentIdForCall}`);
           }
-          agentConn.browserPC.getSenders().forEach(sender => {
+
+          browserPC.getSenders().forEach(sender => {
             console.log("Sender kind:", sender.track?.kind);
             const track = sender.track;
             if (track?.kind === "audio") {
               metaPC.addTrack(track);
               track.onReceiveRtp.subscribe((rtp) => {
-                console.log("📥 RTP from meta:", rtp.header.timestamp)
+                console.log("📥 RTP from browser packet:", rtp.header.timestamp)
               });
             }
           });
