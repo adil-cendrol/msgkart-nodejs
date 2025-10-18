@@ -48,11 +48,11 @@ export async function handleMetaConnection(response) {
             return;
           }
           const agentConn = getAgentConnection(agentIdForCall);
-          if (!agentConn?.browserPC) return;
+          // if (!agentConn?.browserPC) return;
           const browserPC = agentConn.browserPC;
           // Prevent adding the same track again
           const alreadyAdded = browserPC.getSenders().some(s => s.track === track);
-          if (!alreadyAdded && track.kind === "audio") {
+          if (track.kind === "audio") {
             console.log("🎤 Forwarding audio track to Browser");
             browserPC.addTrack(track);
             metaReady(msgkartCallId, track);
@@ -67,10 +67,10 @@ export async function handleMetaConnection(response) {
             const track = sender.track;
             if (track?.kind === "audio") {
               // Prevent adding the same track twice
-              if (!metaPC.getSenders().some(s => s.track === track)) {
+              // if (!metaPC.getSenders().some(s => s.track === track)) {
                 metaPC.addTrack(track);
                 browserReady(msgkartCallId, track);
-              }
+              // }
             }
           });
 
