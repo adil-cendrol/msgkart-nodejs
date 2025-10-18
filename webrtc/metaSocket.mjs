@@ -122,10 +122,13 @@ async function bridgeAudioBetweenPeerConnections(agentId, callId) {
 // Immediately forward existing browser tracks to Meta
 // handleMetaConnection.mjs - UPDATE the forwarding function
 // Immediately forward existing browser tracks to Meta
+// handleMetaConnection.mjs - UPDATE the forwarding function
+// Immediately forward existing browser tracks to Meta
 function forwardExistingBrowserTracksToMeta(agentId, callId) {
   try {
     const agentConn = getAgentConnection(agentId);
     const callConn = getCallConnection(callId);
+    
     
     if (!agentConn || !callConn) return;
 
@@ -137,65 +140,111 @@ function forwardExistingBrowserTracksToMeta(agentId, callId) {
     // Method 1: Check stored tracks in agent connection
     if (agentConn.browserTracks && agentConn.browserTracks.size > 0) {
       console.log(`📦 Found ${agentConn.browserTracks.size} stored browser audio tracks`);
-      agentConn.browserTracks.forEach((track, index) => {
+      
+      let trackIndex = 0;
+      agentConn.browserTracks.forEach((track) => {
         try {
           if (track.readyState === "live") {
-            metaPC.addTrack(track);
-            console.log(`🎤 Forwarded stored browser audio track ${index + 1} to Meta`);
+            trackIndex++;
+            
+            // Get the audio stream from the track
+            const stream = new MediaStream([track]);
+            
+            // Check if metaPC already has audio senders
+            const metaSenders = metaPC.getSenders();
+            const audioSenders = metaSenders.filter(sender => 
+              sender.track && sender.track.kind === "audio"
+            );
+
+            if (audioSenders.length > 0) {
+              // Replace track in existing sender
+              const sender = audioSenders[0];
+              sender.replaceTrack(track);
+              console.log(`🔄 Replaced meta audio track with browser track ${trackIndex}`);
+            } else {
+              // Add new track if no audio sender exists
+              metaPC.addTrack(track, stream);
+              console.log(`🎤 Added browser audio track ${trackIndex} to Meta`);
+            }
           }
         } catch (err) {
-          console.error(`❌ Error forwarding stored track ${index + 1}:`, err);
+          console.error(`❌ Error forwarding stored track ${trackIndex}:`, err);
         }
       });
     }
 
-    // Method 2: Check browser PC receivers
-    const browserReceivers = browserPC.getReceivers();
-    const existingBrowserAudioTracks = browserReceivers
-      .map(receiver => receiver.track)
-      .filter(track => track && track.kind === "audio" && track.readyState === "live");
+    // Method 2: Get tracks from browser PC and forward them
+    try {
+      const browserSenders = browserPC.getSenders();
+      const audioSenders = browserSenders.filter(sender => 
+        sender.track && sender.track.kind === "audio" && sender.track.readyState === "live"
+      );
 
-    console.log(`🎧 Found ${existingBrowserAudioTracks.length} browser receiver audio tracks`);
+      console.log(`🎤 Found ${audioSenders.length} browser sender audio tracks`);
 
-    existingBrowserAudioTracks.forEach((track, index) => {
-      try {
-        const metaSenders = metaPC.getSenders();
-        const alreadyForwarded = metaSenders.some(sender => 
-          sender.track && sender.track.id === track.id
-        );
+      audioSenders.forEach((browserSender, index) => {
+        try {
+          const metaSenders = metaPC.getSenders();
+          const existingAudioSenders = metaSenders.filter(sender => 
+            sender.track && sender.track.kind === "audio"
+          );
 
-        if (!alreadyForwarded) {
-          metaPC.addTrack(track);
-          console.log(`🎤 Forwarded browser receiver audio track ${index + 1} to Meta`);
+          if (existingAudioSenders.length > 0) {
+            // Replace track in existing meta sender
+            const metaSender = existingAudioSenders[0];
+            metaSender.replaceTrack(browserSender.track);
+            console.log(`🔄 Replaced meta sender with browser audio track ${index + 1}`);
+          } else {
+            // Create new sender in meta PC
+            metaPC.addTrack(browserSender.track);
+            console.log(`🎤 Added browser sender audio track ${index + 1} to Meta`);
+          }
+        } catch (err) {
+          console.error(`❌ Error forwarding sender track ${index + 1}:`, err);
         }
-      } catch (err) {
-        console.error(`❌ Error forwarding receiver track ${index + 1}:`, err);
-      }
-    });
+      });
+    } catch (err) {
+      console.error(`❌ Error processing browser senders:`, err);
+    }
 
-    // Method 3: Check browser PC transceivers
-    const browserTransceivers = browserPC.getTransceivers();
-    const transceiverTracks = browserTransceivers
-      .map(transceiver => transceiver.receiver.track)
-      .filter(track => track && track.kind === "audio" && track.readyState === "live");
+    // Method 3: Create a new transceiver for forwarding
+    try {
+      const browserReceivers = browserPC.getReceivers();
+      const audioReceivers = browserReceivers.filter(receiver => 
+        receiver.track && receiver.track.kind === "audio" && receiver.track.readyState === "live"
+      );
 
-    console.log(`🔊 Found ${transceiverTracks.length} browser transceiver audio tracks`);
+      console.log(`🎧 Found ${audioReceivers.length} browser receiver audio tracks`);
 
-    transceiverTracks.forEach((track, index) => {
-      try {
-        const metaSenders = metaPC.getSenders();
-        const alreadyForwarded = metaSenders.some(sender => 
-          sender.track && sender.track.id === track.id
-        );
+      audioReceivers.forEach((receiver, index) => {
+        try {
+          const track = receiver.track;
+          
+          // Check if we need to create a transceiver in meta PC
+          const metaTransceivers = metaPC.getTransceivers();
+          const audioTransceivers = metaTransceivers.filter(t => 
+            t.receiver.track && t.receiver.track.kind === "audio"
+          );
 
-        if (!alreadyForwarded) {
-          metaPC.addTrack(track);
-          console.log(`🎤 Forwarded browser transceiver audio track ${index + 1} to Meta`);
+          if (audioTransceivers.length > 0) {
+            // Use existing transceiver
+            const transceiver = audioTransceivers[0];
+            if (transceiver.sender) {
+              transceiver.sender.replaceTrack(track);
+              console.log(`🔄 Replaced transceiver track with browser audio ${index + 1}`);
+            }
+          } else {
+            // Add track directly
+            metaPC.addTrack(track);
+            console.log(`🎤 Added browser receiver audio track ${index + 1} to Meta`);
+          }
+        } catch (err) {
+          console.error(`❌ Error forwarding receiver track ${index + 1}:`, err);
         }
-      } catch (err) {
-        console.error(`❌ Error forwarding transceiver track ${index + 1}:`, err);
-      }
-    });
+      });
+    } catch (err) {
+      console.error(`❌ Error processing browser receivers:`, err);
+    }
 
   } catch (err) {
     console.error(`❌ Error in forwardExistingBrowserTracksToMeta:`, err);
