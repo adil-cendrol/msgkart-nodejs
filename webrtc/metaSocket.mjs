@@ -49,15 +49,15 @@ export async function handleMetaConnection(response) {
           if (!agentConn?.browserPC) return;
           const browserPC = agentConn.browserPC;
           // Prevent adding the same track again
-          const alreadyAdded = browserPC.getSenders().some(s => s.track === track);
+          const alreadyAdded = metaPC.getSenders().some(s => s.track === track);
           if (!alreadyAdded && track.kind === "audio") {
             console.log("🎤 Forwarding audio track to Browser");
             browserPC.addTrack(track);
             metaReady(msgkartCallId, track);
             console.log(`🔊 Meta audio bridged → Browser (call ${msgkartCallId}, agent ${agentIdForCall})`);
-            // track.onReceiveRtp.subscribe((rtp) => {
-            //   console.log("📥 RTP from meta:", rtp.header.timestamp)
-            // });
+            track.onReceiveRtp.subscribe((rtp) => {
+              console.log("📥 RTP from meta:", rtp.header.timestamp)
+            });
           } else {
             console.warn(`⚠️ Track already added or invalid for agent ${agentIdForCall}`);
           }
