@@ -29,56 +29,19 @@ export async function handleBrowserConnection(response) {
             agentConn = getAgentConnection(agentId);
             console.log(`🧩 Created new browserPC for agent ${agentId}`);
         }
-
         const browserPC = agentConn.browserPC;
-
-        // ✅ Always attach ontrack listener once
-        // if (!browserPC._ontrackSet) {
-        //     browserPC._ontrackSet = true;
-        //     browserPC.ontrack = (ev) => {
-        //         try {
-        //             const track = ev.track;
-        //             const callId = getCallIdByAgent(agentId);
-        //             const callConn = getCallConnection(callId);
-        //             const metaPC = callConn?.metaPC;
-
-        //             console.log(`📶 Browser ontrack (agent ${agentId}, call ${callId})`);
-        //             console.log(`🎯  ontrack triggered → agent=${agentId}, callId=${callId}, trackKind=${track.kind}`);
-        //             if (track.kind === "audio" && metaPC) {
-        //                 metaPC.addTrack(track);
-        //                 browserReady(callId, track);
-        //                 console.log(`🎤 Browser audio bridged → Meta (call ${callId}, agent ${agentId})`);
-        //                 if (track.onReceiveRtp) {
-        //                     track.onReceiveRtp.subscribe((rtp) => {
-        //                         console.log("📥 RTP from browser:", rtp.header.timestamp);
-        //                     });
-        //                 }
-        //             } else {
-        //                 console.warn(`⚠️ No metaPC found or invalid track kind for agent ${agentId}`);
-        //             }
-        //         } catch (err) {
-        //             console.error(`❌ Error in browser ontrack for agent ${agentId}:`, err);
-        //         }
-        //     };
-        // }
-
         // --- Handle browser offer ---
         if (event === "browser_offer_sdp") {
             if (!sdp) return { status: "sdp_missing" };
-
             try {
                 await browserPC.setRemoteDescription({ type: "offer", sdp });
-
                 const answer = await browserPC.createAnswer();
                 await browserPC.setLocalDescription(answer);
-
                 const finalBrowserSDP = finalizeSDP(
                     browserPC,
                     getAgentConnection(agentId)?.browserCandidates
                 );
-
                 console.log(`✅ Browser offer handled successfully for agent ${agentId}`);
-
                 return {
                     agentId,
                     sdp: finalBrowserSDP,
