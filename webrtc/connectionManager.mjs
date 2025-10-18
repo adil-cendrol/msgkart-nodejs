@@ -1,3 +1,4 @@
+// connectionManager.mjs
 export const calls = new Map();   // callId => { metaPC, metaCandidates }
 export const agents = new Map();  // agentId => { browserPC, browserCandidates }
 export const agentToCall = new Map(); // agentId => callId
@@ -33,9 +34,20 @@ export function mapAgentToCall(agentId, callId) {
   agentToCall.set(agentId, callId);
   console.log(`🔗 Mapped agent ${agentId} → call ${callId}`);
 }
+
+// FIX THIS FUNCTION - Get callId by agentId
 export function getCallIdByAgent(agentId) {
   return agentToCall.get(agentId);
 }
+
+// ADD THIS NEW FUNCTION - Get agentId by callId
+export function getAgentIdByCall(callId) {
+  for (const [agentId, cId] of agentToCall.entries()) {
+    if (cId === callId) return agentId;
+  }
+  return undefined;
+}
+
 export function unmapAgent(agentId) {
   agentToCall.delete(agentId);
 }

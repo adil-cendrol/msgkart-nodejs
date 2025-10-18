@@ -8,7 +8,8 @@ import {
   mapAgentToCall,
   listAgentIds,
   agentToCall,
-  getCallIdByAgent
+  getCallIdByAgent,
+  getAgentIdByCall
 } from "./connectionManager.mjs";
 import { browserReady, metaReady, stopRecording } from "../audio/audioMixer.mjs";
 
@@ -16,6 +17,7 @@ import { browserReady, metaReady, stopRecording } from "../audio/audioMixer.mjs"
  * Handles Meta-side WebRTC connections, SDP exchange, and audio bridging
  * between Meta PC and browser PC for agents.
  */
+// handleMetaConnection.mjs
 export async function handleMetaConnection(response) {
   try {
     const { event, msgkartCallId, sdp, agentId, SubscriberId, BusinessId, presignedUrl } = response;
@@ -57,14 +59,19 @@ export async function handleMetaConnection(response) {
     // 4️⃣ Handle Meta SDP answer - Set up audio bridging here
     if (event === "meta_answer_sdp") {
       console.log(`📞 Setting Meta answer SDP for call ${msgkartCallId}`);
-      const agentIdForCall = getCallIdByAgent(msgkartCallId);
+      
+      // Use the agentId from the request body, not from mapping
+      const agentIdForCall = agentId || getAgentIdByCall(msgkartCallId);
+      
+      console.log(`🔍 Agent for call ${msgkartCallId} is ${agentIdForCall}`);
+      
       await metaPC.setRemoteDescription({ type: "answer", sdp });
 
-      // Find the agent mapped to this call and bridge audio
-
-      console.log(`🔍 Agent for call ${msgkartCallId} is ${agentIdForCall}`);
+      // Bridge audio if we have an agent
       if (agentIdForCall) {
         await bridgeAudioBetweenPeerConnections(agentIdForCall, msgkartCallId);
+      } else {
+        console.warn(`⚠️ No agent found for call ${msgkartCallId}, audio bridging skipped`);
       }
 
       return { status: "meta_answer_set" };
@@ -102,10 +109,13 @@ async function bridgeAudioBetweenPeerConnections(agentId, callId) {
     console.log(`🔊 Bridging audio between agent ${agentId} and call ${callId}`);
 
     // Forward browser audio tracks to meta
-    browserPC.getSenders().forEach(sender => {
-      const track = sender.track;
-      if (track && track.kind === "audio") {
-        if (!metaPC.getSenders().some(s => s.track === track)) {
+    const browserTracks = browserPC.getTransceivers()
+      .filter(transceiver => transceiver.receiver.track)
+      .map(transceiver => transceiver.receiver.track);
+
+    browserTracks.forEach(track => {
+      if (track.kind === "audio") {
+        if (!metaPC.getTransceivers().some(t => t.receiver.track === track)) {
           metaPC.addTrack(track);
           console.log(`🎤 Forwarding browser audio to meta for call ${callId}`);
         }
@@ -116,7 +126,7 @@ async function bridgeAudioBetweenPeerConnections(agentId, callId) {
     metaPC.ontrack = (ev) => {
       const track = ev.track;
       if (track.kind === "audio") {
-        if (!browserPC.getSenders().some(s => s.track === track)) {
+        if (!browserPC.getTransceivers().some(t => t.receiver.track === track)) {
           browserPC.addTrack(track);
           console.log(`🎧 Forwarding meta audio to browser for agent ${agentId}`);
         }
