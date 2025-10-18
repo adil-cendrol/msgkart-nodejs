@@ -133,7 +133,6 @@ async function bridgeAudioBetweenPeerConnections(agentId, callId) {
   try {
     const agentConn = getAgentConnection(agentId);
     const callConn = getCallConnection(callId);
-
     if (!agentConn || !callConn) {
       console.warn(`⚠️ Cannot bridge: agent ${agentId} or call ${callId} not found`);
       return;
@@ -153,22 +152,11 @@ async function bridgeAudioBetweenPeerConnections(agentId, callId) {
       if (track.kind === "audio") {
         if (!metaPC.getTransceivers().some(t => t.receiver.track === track)) {
           metaPC.addTrack(track);
+          browserReady(callId, track);
           console.log(`🎤 Forwarding browser audio to meta for call ${callId}`);
         }
       }
     });
-
-    // // Forward meta audio tracks to browser
-    // metaPC.ontrack = (ev) => {
-    //   const track = ev.track;
-    //   if (track.kind === "audio") {
-    //     if (!browserPC.getTransceivers().some(t => t.receiver.track === track)) {
-    //       browserPC.addTrack(track);
-    //       console.log(`🎧 Forwarding meta audio to browser for agent ${agentId}`);
-    //     }
-    //   }
-    // };
-
     console.log(`✅ Audio bridge established between agent ${agentId} and call ${callId}`);
   } catch (err) {
     console.error(`❌ Error bridging audio:`, err);
