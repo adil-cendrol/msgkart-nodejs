@@ -88,7 +88,7 @@ export async function handleMetaConnection(response) {
       await metaPC.setLocalDescription(offer);
       const finalSDP = finalizeSDP(metaPC, metaCandidates);
 
-      console.log(`✅ Meta offer SDP created for call ${msgkartCallId}`);
+      console.log(finalSDP, "findal spd offer sdp");
       return { msgkartCallId, sdp: finalSDP, SdpType: "offer", SubscriberId, BusinessId };
     }
 
@@ -96,9 +96,9 @@ export async function handleMetaConnection(response) {
     if (event === "meta_answer_sdp") {
       console.log(`📞 Setting Meta answer SDP for call ${msgkartCallId}`);
       if (agentId && msgkartCallId) mapAgentToCall(agentId, msgkartCallId); // 🔥 Auto link
-
+      consol
       await metaPC.setRemoteDescription({ type: "answer", sdp });
-    
+
 
 
       return { status: "meta_answer_set" };
