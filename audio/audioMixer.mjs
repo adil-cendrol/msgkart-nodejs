@@ -83,37 +83,106 @@ function tryStartRecording(callId) {
   console.log(`🔴 Recording started: ${wavPath}`);
 }
 
-/** Stop recording and optionally upload to presigned URL */
+
+// export async function stopRecording(callId, presignedUrl) {
+//   const rec = recordings.get(callId);
+//   if (!rec || !rec.isRecordingStarted) return;
+//   console.log(`🛑 Stopping recording for ${callId}`);
+
+//   try { rec.opusBrowser?.end(); } catch {}
+//   try { rec.opusMeta?.end(); } catch {}
+//   try { rec.wavWriter?.end(); } catch {}
+
+//   const wavPath = rec.wavPath;
+//   recordings.delete(callId);
+
+//   try {
+//     if (wavPath && fs.existsSync(wavPath)) {
+//       let uploadSuccess = false;
+
+//       if (presignedUrl) {
+//         try {
+//           const fileData = fs.readFileSync(wavPath);
+//           await axios.put(presignedUrl, fileData, {
+//             headers: { "Content-Type": "audio/wav" },
+//           });
+//           uploadSuccess = true;
+//           console.log(`✅ Uploaded recording to presigned URL`);
+//         } catch (uploadErr) {
+//           console.error(`❌ Upload failed for ${callId}:`, uploadErr.message);
+//         }
+//       }
+
+//       // 🧹 Delete local file ONLY if upload was successful
+//       if (uploadSuccess) {
+//         try {
+//           fs.unlinkSync(wavPath);
+//           console.log(`🧹 Deleted local recording file: ${wavPath}`);
+//         } catch (delErr) {
+//           console.error(`⚠️ Failed to delete local file: ${delErr.message}`);
+//         }
+//       } else {
+//         console.log(`📁 Keeping local recording (upload failed or no presigned URL): ${wavPath}`);
+//       }
+//     }
+//   } catch (err) {
+//     console.error(`❌ Error cleaning up recording for ${callId}:`, err);
+//   }
+
+//   rec.browserBuffer = null;
+//   rec.metaBuffer = null;
+//   global.gc?.();
+// }
 export async function stopRecording(callId, presignedUrl) {
   const rec = recordings.get(callId);
   if (!rec || !rec.isRecordingStarted) return;
   console.log(`🛑 Stopping recording for ${callId}`);
 
-  try { rec.opusBrowser?.end(); } catch { }
-  try { rec.opusMeta?.end(); } catch { }
-  try { rec.wavWriter?.end(); } catch { }
+  try { rec.opusBrowser?.end(); } catch {}
+  try { rec.opusMeta?.end(); } catch {}
+  try { rec.wavWriter?.end(); } catch {}
 
   const wavPath = rec.wavPath;
   recordings.delete(callId);
 
   try {
     if (wavPath && fs.existsSync(wavPath)) {
+      let uploadSuccess = false;
+
       if (presignedUrl) {
         try {
-          const fileData = fs.readFileSync(wavPath);
-          await axios.put(presignedUrl, fileData);
-          console.log(`✅ Uploaded recording to presigned URL`);
+          const fileStream = fs.createReadStream(wavPath);
+
+          // ✅ Axios equivalent to browser fetch(blob)
+          const response = await axios.put(presignedUrl, fileStream, {
+            headers: {
+              "Content-Type": "audio/wav", // same as frontend Blob type
+            },
+            maxBodyLength: Infinity,
+            maxContentLength: Infinity,
+          });
+
+          if (response.status === 200) {
+            uploadSuccess = true;
+            console.log(`✅ Uploaded recording to presigned URL`);
+          } else {
+            console.error(`❌ Upload failed: ${response.statusText}`);
+          }
         } catch (uploadErr) {
           console.error(`❌ Upload failed for ${callId}:`, uploadErr.message);
         }
       }
 
-      // Always delete local file after upload (or even if upload failed)
-      try {
-        fs.unlinkSync(wavPath);
-        console.log(`🧹 Deleted local recording file: ${wavPath}`);
-      } catch (delErr) {
-        console.error(`⚠️ Failed to delete local file: ${delErr.message}`);
+      // 🧹 Delete only after successful upload
+      if (uploadSuccess) {
+        try {
+          fs.unlinkSync(wavPath);
+          console.log(`🧹 Deleted local recording file: ${wavPath}`);
+        } catch (delErr) {
+          console.error(`⚠️ Failed to delete local file: ${delErr.message}`);
+        }
+      } else {
+        console.log(`📁 Keeping local recording (upload failed or no presigned URL): ${wavPath}`);
       }
     }
   } catch (err) {
