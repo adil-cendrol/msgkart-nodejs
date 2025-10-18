@@ -96,7 +96,6 @@ export async function handleMetaConnection(response) {
     if (event === "meta_answer_sdp") {
       console.log(`📞 Setting Meta answer SDP for call ${msgkartCallId}`);
       if (agentId && msgkartCallId) mapAgentToCall(agentId, msgkartCallId); // 🔥 Auto link
-      consol
       await metaPC.setRemoteDescription({ type: "answer", sdp });
 
 
