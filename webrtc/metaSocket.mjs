@@ -57,10 +57,12 @@ export async function handleMetaConnection(response) {
     // 4️⃣ Handle Meta SDP answer - Set up audio bridging here
     if (event === "meta_answer_sdp") {
       console.log(`📞 Setting Meta answer SDP for call ${msgkartCallId}`);
+      const agentIdForCall = getCallIdByAgent(msgkartCallId);
       await metaPC.setRemoteDescription({ type: "answer", sdp });
 
       // Find the agent mapped to this call and bridge audio
-      const agentIdForCall = getCallIdByAgent(msgkartCallId);
+
+      console.log(`🔍 Agent for call ${msgkartCallId} is ${agentIdForCall}`);
       if (agentIdForCall) {
         await bridgeAudioBetweenPeerConnections(agentIdForCall, msgkartCallId);
       }
