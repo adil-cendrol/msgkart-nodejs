@@ -48,13 +48,16 @@ export async function handleMetaConnection(response) {
           const agentConn = getAgentConnection(agentIdForCall);
           if (!agentConn?.browserPC) return;
           const browserPC = agentConn.browserPC;
-          
           // Prevent adding the same track again
           const alreadyAdded = browserPC.getSenders().some(s => s.track === track);
           if (!alreadyAdded && track.kind === "audio") {
+            console.log("🎤 Forwarding audio track to Browser");
             browserPC.addTrack(track);
             metaReady(msgkartCallId, track);
             console.log(`🔊 Meta audio bridged → Browser (call ${msgkartCallId}, agent ${agentIdForCall})`);
+            // track.onReceiveRtp.subscribe((rtp) => {
+            //   console.log("📥 RTP from meta:", rtp.header.timestamp)
+            // });
           } else {
             console.warn(`⚠️ Track already added or invalid for agent ${agentIdForCall}`);
           }
@@ -86,15 +89,20 @@ export async function handleMetaConnection(response) {
       await metaPC.setRemoteDescription({ type: "answer", sdp });
 
       const agentConn = getAgentConnection(agentId);
+      console.log(`🔄 Syncing audio tracks to browserPC for agent ${agentId}`);
+      console.log(agentConn.browserPC, "browser pc")
       if (agentConn?.browserPC) {
         agentConn.browserPC.getSenders().forEach(sender => {
           const track = sender.track;
           if (track?.kind === "audio") {
-            // Prevent adding the same track twice
+            console.log("🎤 Forwarding Browser audio to Meta");
             if (!metaPC.getSenders().some(s => s.track === track)) {
               metaPC.addTrack(track);
               browserReady(msgkartCallId, track);
             }
+            track.onReceiveRtp.subscribe((rtp) => {
+              console.log("📥 RTP from browser side:", rtp.header.timestamp)
+            });
           }
         });
       }
