@@ -89,28 +89,37 @@ export async function stopRecording(callId, presignedUrl) {
   if (!rec || !rec.isRecordingStarted) return;
   console.log(`🛑 Stopping recording for ${callId}`);
 
-  try { rec.opusBrowser?.end(); } catch (e) { }
-  try { rec.opusMeta?.end(); } catch (e) { }
-  try { rec.wavWriter?.end(); } catch (e) { }
+  try { rec.opusBrowser?.end(); } catch { }
+  try { rec.opusMeta?.end(); } catch { }
+  try { rec.wavWriter?.end(); } catch { }
 
   const wavPath = rec.wavPath;
   recordings.delete(callId);
 
-  if (wavPath && fs.existsSync(wavPath) && presignedUrl) {
-    try {
-      const fileData = fs.readFileSync(wavPath);
-      await axios.put(presignedUrl, fileData, {
-        headers: { "Content-Type": "audio/wav" }
-      });
-      console.log(`✅ Uploaded recording to presigned URL`);
-      fs.unlinkSync(wavPath);
-      console.log(`🧹 Deleted local file: ${wavPath}`);
-    } catch (err) {
-      console.error(`❌ Upload to presigned URL failed:`, err);
+  try {
+    if (wavPath && fs.existsSync(wavPath)) {
+      if (presignedUrl) {
+        try {
+          const fileData = fs.readFileSync(wavPath);
+          await axios.put(presignedUrl, fileData);
+          console.log(`✅ Uploaded recording to presigned URL`);
+        } catch (uploadErr) {
+          console.error(`❌ Upload failed for ${callId}:`, uploadErr.message);
+        }
+      }
+
+      // Always delete local file after upload (or even if upload failed)
+      try {
+        fs.unlinkSync(wavPath);
+        console.log(`🧹 Deleted local recording file: ${wavPath}`);
+      } catch (delErr) {
+        console.error(`⚠️ Failed to delete local file: ${delErr.message}`);
+      }
     }
+  } catch (err) {
+    console.error(`❌ Error cleaning up recording for ${callId}:`, err);
   }
 
-  // Cleanup buffers
   rec.browserBuffer = null;
   rec.metaBuffer = null;
   global.gc?.();
