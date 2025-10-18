@@ -17,12 +17,10 @@ export function getCallConnection(callId) {
 }
 
 /** Browser (long-lived per agent) */
-// connectionManager.mjs - UPDATE createBrowserConnection
 export function createBrowserConnection(agentId, pc, candidates = null) {
   if (!agents.has(agentId)) agents.set(agentId, {});
   const conn = agents.get(agentId);
   conn.browserPC = pc;
-  conn.browserTracks = new Set(); // Initialize tracks storage
   if (candidates) conn.browserCandidates = candidates;
   agents.set(agentId, conn);
   return conn;
