@@ -120,6 +120,8 @@ async function bridgeAudioBetweenPeerConnections(agentId, callId) {
 }
 
 // Immediately forward existing browser tracks to Meta
+// handleMetaConnection.mjs - UPDATE the forwarding function
+// Immediately forward existing browser tracks to Meta
 function forwardExistingBrowserTracksToMeta(agentId, callId) {
   try {
     const agentConn = getAgentConnection(agentId);
@@ -130,42 +132,56 @@ function forwardExistingBrowserTracksToMeta(agentId, callId) {
     const browserPC = agentConn.browserPC;
     const metaPC = callConn.metaPC;
 
-    // Get all existing audio tracks from browser
+    console.log(`🔍 Checking for browser audio tracks for agent ${agentId}`);
+
+    // Method 1: Check stored tracks in agent connection
+    if (agentConn.browserTracks && agentConn.browserTracks.size > 0) {
+      console.log(`📦 Found ${agentConn.browserTracks.size} stored browser audio tracks`);
+      agentConn.browserTracks.forEach((track, index) => {
+        try {
+          if (track.readyState === "live") {
+            metaPC.addTrack(track);
+            console.log(`🎤 Forwarded stored browser audio track ${index + 1} to Meta`);
+          }
+        } catch (err) {
+          console.error(`❌ Error forwarding stored track ${index + 1}:`, err);
+        }
+      });
+    }
+
+    // Method 2: Check browser PC receivers
     const browserReceivers = browserPC.getReceivers();
     const existingBrowserAudioTracks = browserReceivers
       .map(receiver => receiver.track)
       .filter(track => track && track.kind === "audio" && track.readyState === "live");
 
-    console.log(`🔍 Found ${existingBrowserAudioTracks.length} existing browser audio tracks`);
+    console.log(`🎧 Found ${existingBrowserAudioTracks.length} browser receiver audio tracks`);
 
-    // Forward each existing browser track to Meta
     existingBrowserAudioTracks.forEach((track, index) => {
       try {
-        // Check if this track is already in Meta
         const metaSenders = metaPC.getSenders();
         const alreadyForwarded = metaSenders.some(sender => 
           sender.track && sender.track.id === track.id
         );
 
         if (!alreadyForwarded) {
-          // Add the track to Meta PC
           metaPC.addTrack(track);
-          console.log(`🎤 Immediately forwarded existing browser audio track ${index + 1} to Meta`);
-        } else {
-          console.log(`🔄 Browser audio track ${index + 1} already in Meta`);
+          console.log(`🎤 Forwarded browser receiver audio track ${index + 1} to Meta`);
         }
       } catch (err) {
-        console.error(`❌ Error forwarding browser track ${index + 1}:`, err);
+        console.error(`❌ Error forwarding receiver track ${index + 1}:`, err);
       }
     });
 
-    // Also check browser senders (outgoing tracks)
-    const browserSenders = browserPC.getSenders();
-    const outgoingBrowserTracks = browserSenders
-      .map(sender => sender.track)
+    // Method 3: Check browser PC transceivers
+    const browserTransceivers = browserPC.getTransceivers();
+    const transceiverTracks = browserTransceivers
+      .map(transceiver => transceiver.receiver.track)
       .filter(track => track && track.kind === "audio" && track.readyState === "live");
 
-    outgoingBrowserTracks.forEach((track, index) => {
+    console.log(`🔊 Found ${transceiverTracks.length} browser transceiver audio tracks`);
+
+    transceiverTracks.forEach((track, index) => {
       try {
         const metaSenders = metaPC.getSenders();
         const alreadyForwarded = metaSenders.some(sender => 
@@ -174,10 +190,10 @@ function forwardExistingBrowserTracksToMeta(agentId, callId) {
 
         if (!alreadyForwarded) {
           metaPC.addTrack(track);
-          console.log(`🎤 Immediately forwarded outgoing browser audio track ${index + 1} to Meta`);
+          console.log(`🎤 Forwarded browser transceiver audio track ${index + 1} to Meta`);
         }
       } catch (err) {
-        console.error(`❌ Error forwarding outgoing browser track ${index + 1}:`, err);
+        console.error(`❌ Error forwarding transceiver track ${index + 1}:`, err);
       }
     });
 
@@ -185,7 +201,6 @@ function forwardExistingBrowserTracksToMeta(agentId, callId) {
     console.error(`❌ Error in forwardExistingBrowserTracksToMeta:`, err);
   }
 }
-
 // Set up track forwarding in both directions
 function setupTrackForwarding(agentId, callId) {
   const agentConn = getAgentConnection(agentId);
