@@ -30,10 +30,28 @@ export function getAgentConnection(agentId) {
 }
 
 /** Map agent <-> call */
+// export function mapAgentToCall(agentId, callId) {
+//   agentToCall.set(agentId, callId);
+//   console.log(`🔗 Mapped agent ${agentId} → call ${callId}`);
+// }
+/** Map agent <-> call safely */
 export function mapAgentToCall(agentId, callId) {
+  const existingCallId = agentToCall.get(agentId);
+
+  if (existingCallId && existingCallId !== callId) {
+    // Agent had a previous call, remove old mapping first
+    console.log(`♻️ Agent ${agentId} was mapped to old call ${existingCallId}, removing mapping`);
+    agentToCall.delete(agentId);
+
+    // Optionally, cleanup old metaPC if you want:
+    // removeCallConnection(existingCallId);
+  }
+
+  // Map agent to new call
   agentToCall.set(agentId, callId);
   console.log(`🔗 Mapped agent ${agentId} → call ${callId}`);
 }
+
 
 // FIX THIS FUNCTION - Get callId by agentId
 export function getCallIdByAgent(agentId) {
@@ -53,17 +71,41 @@ export function unmapAgent(agentId) {
 }
 
 /** Remove only metaPC (call ended) */
+// export function removeCallConnection(callId) {
+//   const conn = calls.get(callId);
+//   if (!conn) return false;
+//   try { conn.metaPC?.close?.(); } catch (err) { console.warn(err?.message || err); }
+//   calls.delete(callId);
+//   // Remove agent mappings linked to this call
+//   for (const [agentId, cId] of agentToCall.entries()) {
+//     if (cId === callId) agentToCall.delete(agentId);
+//   }
+//   return true;
+// }
+/** Remove only metaPC (call ended) */
 export function removeCallConnection(callId) {
   const conn = calls.get(callId);
   if (!conn) return false;
-  try { conn.metaPC?.close?.(); } catch (err) { console.warn(err?.message || err); }
-  calls.delete(callId);
-  // Remove agent mappings linked to this call
-  for (const [agentId, cId] of agentToCall.entries()) {
-    if (cId === callId) agentToCall.delete(agentId);
+  try {
+    conn.metaPC?.close?.();
+  } catch (err) {
+    console.warn(err?.message || err);
   }
+
+  // Remove the call from calls map
+  calls.delete(callId);
+
+  // 🧹 Unmap only those agents linked to this specific call
+  for (const [agentId, cId] of agentToCall.entries()) {
+    if (cId === callId) {
+      agentToCall.delete(agentId);
+      console.log(`🧹 Unmapped agent ${agentId} from ended call ${callId}`);
+    }
+  }
+
   return true;
 }
+
 
 /** Remove agent's browserPC (agent removed/disconnect) */
 export function removeAgentConnection(agentId) {
