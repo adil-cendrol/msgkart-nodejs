@@ -87,24 +87,24 @@ export async function handleMetaConnection(response) {
       console.log(`📞 Setting Meta answer SDP for call ${msgkartCallId}`);
       if (agentId && msgkartCallId) mapAgentToCall(agentId, msgkartCallId); // 🔥 Auto link
       const agentConn = getAgentConnection(agentId);
-      console.log(`🔄 Syncing audio tracks to browserPC for agent ${agentId}`);
-      console.log(agentConn.browserPC, "browser pc")
-      if (agentConn?.browserPC) {
-        agentConn.browserPC.getSenders().forEach(sender => {
+      const browserPC = agentConn?.browserPC;
+      await metaPC.setRemoteDescription({ type: "answer", sdp });
+      if (browserPC) {
+        browserPC.getSenders().forEach(sender => {
           const track = sender.track;
           if (track?.kind === "audio") {
-            console.log("🎤 Forwarding Browser audio to Meta");
+            console.log("🎤 Forwarding Browser audio to Meta")
             if (!metaPC.getSenders().some(s => s.track === track)) {
-              metaPC.addTrack(track);
+              metaPC.addTrack(track)
               browserReady(msgkartCallId, track);
             }
             track.onReceiveRtp.subscribe((rtp) => {
               console.log("📥 RTP from browser side:", rtp.header.timestamp)
-            });
+            }
+            );
           }
         });
       }
-      await metaPC.setRemoteDescription({ type: "answer", sdp });
       return { status: "meta_answer_set" };
     }
 
