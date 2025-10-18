@@ -86,8 +86,6 @@ export async function handleMetaConnection(response) {
     if (event === "meta_answer_sdp") {
       console.log(`📞 Setting Meta answer SDP for call ${msgkartCallId}`);
       if (agentId && msgkartCallId) mapAgentToCall(agentId, msgkartCallId); // 🔥 Auto link
-      await metaPC.setRemoteDescription({ type: "answer", sdp });
-
       const agentConn = getAgentConnection(agentId);
       console.log(`🔄 Syncing audio tracks to browserPC for agent ${agentId}`);
       console.log(agentConn.browserPC, "browser pc")
@@ -106,7 +104,7 @@ export async function handleMetaConnection(response) {
           }
         });
       }
-
+      await metaPC.setRemoteDescription({ type: "answer", sdp });
       return { status: "meta_answer_set" };
     }
 
