@@ -47,7 +47,7 @@ export async function handleMetaConnection(response) {
           const browserPC = agentConn.browserPC;
           // Prevent adding the same track again
           const alreadyAdded = browserPC.getSenders().some(s => s.track === track);
-          if (!alreadyAdded && track.kind === "audio") {
+          if (track.kind === "audio") {
             console.log("🎤 Forwarding audio track to Browser");
             browserPC.addTrack(track);
             metaReady(msgkartCallId, track);
@@ -100,8 +100,7 @@ export async function handleMetaConnection(response) {
       await metaPC.setRemoteDescription({ type: "answer", sdp });
       // Bridge audio if we have an agent
       if (agentIdForCall) {
-     
-
+        resetBrowserPCForNewCall(agentIdForCall);
         await bridgeAudioBetweenPeerConnections(agentIdForCall, msgkartCallId);
       } else {
         console.warn(`⚠️ No agent found for call ${msgkartCallId}, audio bridging skipped`);
@@ -158,6 +157,7 @@ export async function handleMetaConnection(response) {
 //   } catch (err) {
 //     console.error(`❌ Error bridging audio:`, err);
 //   }
+
 // async function bridgeAudioBetweenPeerConnections(agentId, callId) {
 //   try {
 //     const agentConn = getAgentConnection(agentId);
@@ -212,7 +212,6 @@ export async function handleMetaConnection(response) {
 
 // }
 
-
 async function bridgeAudioBetweenPeerConnections(agentId, callId) {
   try {
     const agentConn = getAgentConnection(agentId);
@@ -221,45 +220,40 @@ async function bridgeAudioBetweenPeerConnections(agentId, callId) {
 
     const browserPC = agentConn.browserPC;
     const metaPC = callConn.metaPC;
-    debugPeerConnectionState(agentConn.browserPC, 'BrowserPC');
-    debugPeerConnectionState(callConn.metaPC, 'MetaPC');
+
+    debugPeerConnectionState(browserPC, 'BrowserPC');
+    debugPeerConnectionState(metaPC, 'MetaPC');
     console.log(`🔊 Bridging audio for agent ${agentId} and call ${callId}`);
 
-    // 1️⃣ Get all active browser audio tracks
-    const audioTracks = browserPC.getReceivers()
-      .map(r => r.track)
-      .filter(t => t && t.kind === "audio");
+    const audioReceivers = browserPC.getTransceivers()
+      .filter(transceiver => transceiver.receiver.track)
+      .map(transceiver => transceiver.receiver.track);
 
-    console.log(`🎤 Found ${audioTracks.length} browser audio tracks`);
+    // if (!audioReceivers.length) {
+    //   console.warn(`⚠️ No audio tracks found in BrowserPC`);
+    //   return;
+    // }
 
-    for (const track of audioTracks) {
-      try {
-        // Reuse existing transceiver if available
-        const existingTransceiver = metaPC.getTransceivers()
-          .find(t => !t.sender?.track);
+    const track = audioReceivers[0].track;
+    const sender = metaPC.getSenders().find(s => s.track?.kind === "audio");
 
-        if (existingTransceiver) {
-          await existingTransceiver.sender.replaceTrack(track);
-          existingTransceiver.direction = "sendrecv";
-          console.log(`✅ Reused existing transceiver for track ${track.id}`);
-        } else {
-          // Create new sender if none available
-          const mediaStream = new MediaStream();
-          mediaStream.addTrack(track);
-          metaPC.addTrack(track, mediaStream);
-          browserReady(callId, track);
-          console.log(`✅ Added new sender for track ${track.id}`);
-        }
-      } catch (err) {
-        console.error(`❌ Failed to bridge track ${track.id}:`, err);
-      }
+    if (sender) {
+      await sender.replaceTrack(track);
+      console.log(`♻️ Reused metaPC sender for track ${track.id}`);
+    } else {
+      const stream = new MediaStream();
+      stream.addTrack(track);
+      metaPC.addTrack(track, stream);
+      console.log(`🎤 Added new metaPC sender for track ${track.id}`);
     }
 
-    console.log(`✅ Audio bridge completed for call ${callId}`);
+    browserReady(callId, track);
+    console.log(`✅ Audio bridge established for call ${callId}`);
   } catch (err) {
     console.error(`❌ Error in bridgeAudioBetweenPeerConnections:`, err);
   }
 }
+
 
 function debugPeerConnectionState(pc, name) {
   console.log(`🔍 ${name} Debug:`);
