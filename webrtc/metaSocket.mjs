@@ -10,7 +10,7 @@ import {
   agentToCall,
   getCallIdByAgent,
   getAgentIdByCall,
-  cleanupBrowserPCTracks
+  resetBrowserPCForNewCall
 } from "./connectionManager.mjs";
 import { browserReady, metaReady, stopRecording } from "../audio/audioMixer.mjs";
 import { MediaStream } from "werift";
@@ -100,10 +100,11 @@ export async function handleMetaConnection(response) {
       console.log(`🔍 Agent for call ${msgkartCallId} is ${agentIdForCall}`);
 
       await metaPC.setRemoteDescription({ type: "answer", sdp });
-
       // Bridge audio if we have an agent
       if (agentIdForCall) {
-        cleanupBrowserPCTracks(agentIdForCall);
+        // Remove any previous tracks sent from this browser to meta
+        resetBrowserPCForNewCall(agentIdForCall);
+
         await bridgeAudioBetweenPeerConnections(agentIdForCall, msgkartCallId);
       } else {
         console.warn(`⚠️ No agent found for call ${msgkartCallId}, audio bridging skipped`);
@@ -160,6 +161,61 @@ export async function handleMetaConnection(response) {
 //   } catch (err) {
 //     console.error(`❌ Error bridging audio:`, err);
 //   }
+// async function bridgeAudioBetweenPeerConnections(agentId, callId) {
+//   try {
+//     const agentConn = getAgentConnection(agentId);
+//     const callConn = getCallConnection(callId);
+//     if (!agentConn || !callConn) return;
+
+//     const browserPC = agentConn.browserPC;
+//     const metaPC = callConn.metaPC;
+
+//     debugPeerConnectionState(agentConn.browserPC, 'BrowserPC');
+//     debugPeerConnectionState(callConn.metaPC, 'MetaPC');
+//     console.log(`🔊 Setting up audio bridge for agent ${agentId} and call ${callId}`);
+
+//     // Get the remote stream from browserPC (tracks received from browser)
+//     const remoteStreams = browserPC.getReceivers().map(receiver => receiver.track);
+//     const audioTracks = remoteStreams.filter(track => track.kind === "audio");
+
+//     console.log(`🎤 Found ${audioTracks.length} remote audio tracks from browser`);
+
+//     // For each audio track, create a new sender in metaPC
+//     audioTracks.forEach(track => {
+//       try {
+//         // In werift, we need to be careful about track reuse
+//         // Create a new media stream for isolation
+//         const mediaStream = new MediaStream();
+//         mediaStream.addTrack(track);
+
+//         // Add track with the media stream
+//         metaPC.addTrack(track, mediaStream);
+//         browserReady(callId, track);
+
+//         console.log(`✅ Bridged browser track to metaPC: ${track.id}`);
+//       } catch (err) {
+//         console.error(`❌ Failed to bridge track ${track.id}:`, err);
+
+//         // Fallback: create new transceiver
+//         try {
+//           metaPC.addTransceiver(track, { direction: "sendonly" });
+//           console.log(`✅ Used fallback transceiver for track: ${track.id}`);
+//         } catch (fallbackErr) {
+//           console.error(`❌ Fallback also failed for track ${track.id}:`, fallbackErr);
+//         }
+//       }
+//     });
+
+//     console.log(`✅ Audio bridge established for call ${callId}`);
+
+//   } catch (err) {
+//     console.error(`❌ Error bridging audio:`, err);
+//   }
+
+
+// }
+
+
 async function bridgeAudioBetweenPeerConnections(agentId, callId) {
   try {
     const agentConn = getAgentConnection(agentId);
@@ -168,66 +224,61 @@ async function bridgeAudioBetweenPeerConnections(agentId, callId) {
 
     const browserPC = agentConn.browserPC;
     const metaPC = callConn.metaPC;
-
     debugPeerConnectionState(agentConn.browserPC, 'BrowserPC');
     debugPeerConnectionState(callConn.metaPC, 'MetaPC');
-    console.log(`🔊 Setting up audio bridge for agent ${agentId} and call ${callId}`);
+    console.log(`🔊 Bridging audio for agent ${agentId} and call ${callId}`);
 
-    // Get the remote stream from browserPC (tracks received from browser)
-    const remoteStreams = browserPC.getReceivers().map(receiver => receiver.track);
-    const audioTracks = remoteStreams.filter(track => track.kind === "audio");
+    // 1️⃣ Get all active browser audio tracks
+    const audioTracks = browserPC.getReceivers()
+      .map(r => r.track)
+      .filter(t => t && t.kind === "audio");
 
-    console.log(`🎤 Found ${audioTracks.length} remote audio tracks from browser`);
+    console.log(`🎤 Found ${audioTracks.length} browser audio tracks`);
 
-    // For each audio track, create a new sender in metaPC
-    audioTracks.forEach(track => {
+    for (const track of audioTracks) {
       try {
-        // In werift, we need to be careful about track reuse
-        // Create a new media stream for isolation
-        const mediaStream = new MediaStream();
-        mediaStream.addTrack(track);
+        // Reuse existing transceiver if available
+        const existingTransceiver = metaPC.getTransceivers()
+          .find(t => !t.sender?.track && t.direction === "inactive");
 
-        // Add track with the media stream
-        metaPC.addTrack(track, mediaStream);
-        browserReady(callId, track);
-
-        console.log(`✅ Bridged browser track to metaPC: ${track.id}`);
+        if (existingTransceiver) {
+          await existingTransceiver.sender.replaceTrack(track);
+          existingTransceiver.direction = "sendrecv";
+          console.log(`✅ Reused existing transceiver for track ${track.id}`);
+        } else {
+          // Create new sender if none available
+          const mediaStream = new MediaStream();
+          mediaStream.addTrack(track);
+          metaPC.addTrack(track, mediaStream);
+          console.log(`✅ Added new sender for track ${track.id}`);
+        }
       } catch (err) {
         console.error(`❌ Failed to bridge track ${track.id}:`, err);
-
-        // Fallback: create new transceiver
-        try {
-          metaPC.addTransceiver(track, { direction: "sendonly" });
-          console.log(`✅ Used fallback transceiver for track: ${track.id}`);
-        } catch (fallbackErr) {
-          console.error(`❌ Fallback also failed for track ${track.id}:`, fallbackErr);
-        }
       }
-    });
+    }
 
-    console.log(`✅ Audio bridge established for call ${callId}`);
-
+    console.log(`✅ Audio bridge completed for call ${callId}`);
   } catch (err) {
-    console.error(`❌ Error bridging audio:`, err);
+    console.error(`❌ Error in bridgeAudioBetweenPeerConnections:`, err);
   }
-  function debugPeerConnectionState(pc, name) {
-    console.log(`🔍 ${name} Debug:`);
-    console.log(`   Connection state: ${pc.connectionState}`);
-    console.log(`   ICE connection state: ${pc.iceConnectionState}`);
-    console.log(`   Signaling state: ${pc.signalingState}`);
+}
 
-    const transceivers = pc.getTransceivers();
-    console.log(`   Transceivers: ${transceivers.length}`);
+function debugPeerConnectionState(pc, name) {
+  console.log(`🔍 ${name} Debug:`);
+  console.log(`   Connection state: ${pc.connectionState}`);
+  console.log(`   ICE connection state: ${pc.iceConnectionState}`);
+  console.log(`   Signaling state: ${pc.signalingState}`);
 
-    transceivers.forEach((transceiver, index) => {
-      const receiverTrack = transceiver.receiver?.track;
-      const senderTrack = transceiver.sender?.track;
-      console.log(`   Transceiver ${index}:`);
-      console.log(`     Direction: ${transceiver.direction}`);
-      console.log(`     Receiver: ${receiverTrack?.id} (${receiverTrack?.kind})`);
-      console.log(`     Sender: ${senderTrack?.id} (${senderTrack?.kind})`);
-      console.log(`     CurrentDirection: ${transceiver.currentDirection}`);
-    });
-  }
+  const transceivers = pc.getTransceivers();
+  console.log(`   Transceivers: ${transceivers.length}`);
 
+  transceivers.forEach((transceiver, index) => {
+    const receiverTrack = transceiver.receiver?.track;
+    const senderTrack = transceiver.sender?.track;
+    console.log(`   Transceiver ${index}:`);
+    console.log(`     Direction: ${transceiver.direction}`);
+    console.log(`     Receiver: ${receiverTrack?.id} (${receiverTrack?.kind})`);
+    console.log(`     Sender: ${senderTrack?.id} (${senderTrack?.kind})`);
+    console.log(`     CurrentDirection: ${transceiver.currentDirection}`);
+  });
 }
