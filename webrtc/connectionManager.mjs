@@ -83,13 +83,45 @@ export function unmapAgent(agentId) {
 //   return true;
 // }
 /** Remove only metaPC (call ended) */
+// export function removeCallConnection(callId) {
+//   const conn = calls.get(callId);
+//   if (!conn) return false;
+//   try {
+//     conn.metaPC?.close?.();
+//   } catch (err) {
+//     console.warn(err?.message || err);
+//   }
+
+//   // Remove the call from calls map
+//   calls.delete(callId);
+
+//   // 🧹 Unmap only those agents linked to this specific call
+//   for (const [agentId, cId] of agentToCall.entries()) {
+//     if (cId === callId) {
+//       agentToCall.delete(agentId);
+//       console.log(`🧹 Unmapped agent ${agentId} from ended call ${callId}`);
+//     }
+//   }
+
+//   return true;
+// }
 export function removeCallConnection(callId) {
   const conn = calls.get(callId);
   if (!conn) return false;
+
   try {
-    conn.metaPC?.close?.();
+    // Properly close and cleanup metaPC
+    if (conn.metaPC) {
+      // Remove all tracks before closing
+      conn.metaPC.getSenders().forEach(sender => {
+        if (sender.track) {
+          sender.track.stop();
+        }
+      });
+      conn.metaPC.close();
+    }
   } catch (err) {
-    console.warn(err?.message || err);
+    console.warn(`Error closing metaPC for call ${callId}:`, err?.message || err);
   }
 
   // Remove the call from calls map

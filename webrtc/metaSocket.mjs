@@ -13,11 +13,6 @@ import {
 } from "./connectionManager.mjs";
 import { browserReady, metaReady, stopRecording } from "../audio/audioMixer.mjs";
 
-/**
- * Handles Meta-side WebRTC connections, SDP exchange, and audio bridging
- * between Meta PC and browser PC for agents.
- */
-// handleMetaConnection.mjs
 export async function handleMetaConnection(response) {
   try {
     const { event, msgkartCallId, sdp, agentId, SubscriberId, BusinessId, presignedUrl } = response;

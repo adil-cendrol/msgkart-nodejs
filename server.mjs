@@ -4,6 +4,7 @@ import { WebSocketServer } from "ws";
 import { PORT } from "./config/env.js";
 import { handleBrowserConnection } from "./webrtc/browserSocket.mjs";
 import { handleMetaConnection } from "./webrtc/metaSocket.mjs";
+import { agentToCall } from "./webrtc/connectionManager.mjs";
 
 const app = express();
 app.use(express.json());
@@ -53,6 +54,67 @@ app.post("/api/v1/webrtc/connect", async (req, res) => {
         res.status(500).json({ status: "fatal_error", message: err.message });
     }
 });
+
+app.get("/api/webrtc/active-calls", (req, res) => {
+    const summary = {};
+
+    for (const [agentId, callId] of agentToCall.entries()) {
+        if (!summary[callId]) summary[callId] = [];
+        summary[callId].push(agentId);
+    }
+
+    const result = Object.entries(summary).map(([callId, agents]) => ({
+        callId,
+        totalAgents: agents.length,
+        agents
+    }));
+
+    res.json({ activeCalls: result });
+});
+// 🧮 Get
+//  agents connected to a specific call
+app.get("/api/webrtc/agents-by-call/:callId", (req, res) => {
+    const { callId } = req.params;
+
+    // Find all agent IDs mapped to this call
+    const connectedAgents = [...agentToCall.entries()]
+        .filter(([agentId, cId]) => cId === callId)
+        .map(([agentId]) => agentId);
+
+    res.json({
+        callId,
+        totalAgents: connectedAgents.length,
+        agents: connectedAgents
+    });
+});
+
+// 🧩 Get call details based on a specific agent ID
+app.get("/api/webrtc/call-by-agent/:agentId", (req, res) => {
+    const { agentId } = req.params;
+
+    // Check if agent exists in mapping
+    const callId = agentToCall.get(agentId);
+
+    if (!callId) {
+        return res.status(404).json({
+            agentId,
+            message: "Agent is not currently mapped to any active call."
+        });
+    }
+
+    // Find all agents currently in the same call
+    const agentsInSameCall = [...agentToCall.entries()]
+        .filter(([aId, cId]) => cId === callId)
+        .map(([aId]) => aId);
+
+    res.json({
+        agentId,
+        callId,
+        totalAgentsInSameCall: agentsInSameCall.length,
+        agentsInSameCall
+    });
+});
+
 
 
 
