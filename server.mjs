@@ -114,6 +114,17 @@ app.get("/api/webrtc/call-by-agent/:agentId", (req, res) => {
         agentsInSameCall
     });
 });
+// 🧮 Get total active agents (across all calls)
+app.get("/api/webrtc/total-active-agents", (req, res) => {
+  const allAgents = [...agentToCall.keys()];
+  const totalAgents = allAgents.length;
+
+  res.json({
+    totalAgents,
+    agents: allAgents
+  });
+});
+
 
 
 
