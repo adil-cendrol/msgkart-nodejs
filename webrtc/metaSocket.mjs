@@ -8,7 +8,7 @@ import {
   mapAgentToCall,
   agentToCall,
   getAgentIdByCall,
-  resetBrowserPCForNewCall
+  cleanupBrowserPCTracks
 } from "./connectionManager.mjs";
 import { browserReady, metaReady, stopRecording } from "../audio/audioMixer.mjs";
 import { MediaStream } from "werift";
@@ -100,7 +100,7 @@ export async function handleMetaConnection(response) {
       await metaPC.setRemoteDescription({ type: "answer", sdp });
       // Bridge audio if we have an agent
       if (agentIdForCall) {
-        resetBrowserPCForNewCall(agentIdForCall);
+        cleanupBrowserPCTracks(agentIdForCall);
         await bridgeAudioBetweenPeerConnections(agentIdForCall, msgkartCallId);
       } else {
         console.warn(`⚠️ No agent found for call ${msgkartCallId}, audio bridging skipped`);
@@ -225,27 +225,23 @@ async function bridgeAudioBetweenPeerConnections(agentId, callId) {
     debugPeerConnectionState(metaPC, 'MetaPC');
     console.log(`🔊 Bridging audio for agent ${agentId} and call ${callId}`);
 
-    // 🧩 Get all received audio tracks from the Browser
-    const audioTracks = browserPC.getTransceivers()
-      .filter(t => t.receiver?.track && t.receiver.track.kind === "audio")
-      .map(t => t.receiver.track);
+    // Get the single audio track from BrowserPC’s receiver
+    const audioReceiver = browserPC.getReceivers().find(r => r.track?.kind === "audio");
+    const track = audioReceiver?.track;
 
-    if (!audioTracks.length) {
-      console.warn(`⚠️ No audio tracks found in BrowserPC for agent ${agentId}`);
+    if (!track) {
+      console.warn(`⚠️ No audio track found in BrowserPC for agent ${agentId}`);
       return;
     }
 
-    const track = audioTracks[0]; // ✅ FIXED HERE
-
-    // Reuse existing sender if present
-    const sender = metaPC.getSenders().find(s => s.track?.kind === "audio");
+    // Reuse existing meta sender if exists
+    let sender = metaPC.getSenders().find(s => s.track?.kind === "audio");
 
     if (sender) {
       await sender.replaceTrack(track);
-      console.log(`♻️ Reused existing metaPC sender for track ${track.id}`);
+      console.log(`♻️ Reused metaPC sender for new track ${track.id}`);
     } else {
-      const stream = new MediaStream();
-      stream.addTrack(track);
+      const stream = new MediaStream([track]);
       metaPC.addTrack(track, stream);
       console.log(`🎤 Added new metaPC sender for track ${track.id}`);
     }
@@ -256,6 +252,7 @@ async function bridgeAudioBetweenPeerConnections(agentId, callId) {
     console.error(`❌ Error in bridgeAudioBetweenPeerConnections:`, err);
   }
 }
+
 
 
 function debugPeerConnectionState(pc, name) {

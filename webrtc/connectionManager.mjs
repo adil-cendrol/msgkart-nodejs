@@ -149,27 +149,36 @@ export function removeAgentConnection(agentId) {
   return true;
 }
 
-export function resetBrowserPCForNewCall(agentId) {
+export function cleanupBrowserPCTracks(agentId) {
   const agentConn = getAgentConnection(agentId);
   if (!agentConn?.browserPC) return;
 
   const pc = agentConn.browserPC;
 
-  pc.getTransceivers().forEach(transceiver => {
-    if (transceiver.sender?.track) {
-      // Stop old track
-      transceiver.sender.track.stop();
-      // Detach track without removing sender
-      try {
-        transceiver.sender.replaceTrack(null);
-      } catch (e) { }
-    }
-    // Make transceiver inactive to reuse
-    // transceiver.direction = "inactive";
-  });
+  console.log(`🧹 Cleaning up BrowserPC tracks (no reconnect) for agent ${agentId}`);
 
-  console.log(`♻️ BrowserPC for agent ${agentId} reset for new call`);
+  // Stop all senders’ tracks
+  for (const sender of pc.getSenders()) {
+    try {
+      sender.track?.stop();
+      sender.replaceTrack(null);
+    } catch (err) {
+      console.warn(`⚠️ Error cleaning sender:`, err);
+    }
+  }
+
+  // Stop receivers’ tracks too
+  for (const receiver of pc.getReceivers()) {
+    try {
+      receiver.track?.stop();
+    } catch (err) {
+      console.warn(`⚠️ Error cleaning receiver:`, err);
+    }
+  }
+
+  console.log(`✅ BrowserPC cleaned (kept alive) for agent ${agentId}`);
 }
+
 
 export function listCallIds() { return Array.from(calls.keys()); }
 export function listAgentIds() { return Array.from(agents.keys()); }
