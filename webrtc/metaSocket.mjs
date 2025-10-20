@@ -136,7 +136,7 @@ async function bridgeAudioBetweenPeerConnections(agentId, callId) {
     const browserPC = agentConn.browserPC;
     const metaPC = callConn.metaPC;
 
-    console.log(`🔊 Bridging audio between agent ${agentId} and call ${callId}`);
+    console.log(`🔊 Bridging audio between agent ${agentId} and call ${callId}` , !metaPC);
 
     // Forward browser audio tracks to meta
     const browserTracks = browserPC.getTransceivers()

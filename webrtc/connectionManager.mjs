@@ -113,11 +113,11 @@ export function removeCallConnection(callId) {
     // Properly close and cleanup metaPC
     if (conn.metaPC) {
       // Remove all tracks before closing
-      conn.metaPC.getSenders().forEach(sender => {
-        if (sender.track) {
-          sender.track.stop();
-        }
-      });
+      // conn.metaPC.getSenders().forEach(sender => {
+      //   if (sender.track) {
+      //     sender.track.stop();
+      //   }
+      // });
       conn.metaPC.close();
     }
   } catch (err) {
