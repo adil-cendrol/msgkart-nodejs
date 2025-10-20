@@ -31,75 +31,37 @@ export async function handleMetaConnection(response) {
     const metaCandidates = callConn.metaCandidates;
     if (!metaPC._ontrackSet) {
       metaPC._ontrackSet = true;
-      // metaPC.ontrack = (ev) => {
-      //   try {
-      //     const track = ev.track;
-      //     // Find the agent mapped to this call
-      //     const agentIdForCall = [...agentToCall.entries()]
-      //       .find(([agentId, cId]) => cId === msgkartCallId)?.[0];
-
-      //     if (!agentIdForCall) {
-      //       console.warn(`⚠️ No agent mapped yet for call ${msgkartCallId}.`);
-      //       return;
-      //     }
-      //     const agentConn = getAgentConnection(agentIdForCall);
-      //     if (!agentConn?.browserPC) return;
-      //     const browserPC = agentConn.browserPC;
-      //     // Prevent adding the same track again
-      //     const alreadyAdded = browserPC.getSenders().some(s => s.track === track);
-      //     if (!alreadyAdded && track.kind === "audio") {
-      //       console.log("🎤 Forwarding audio track to Browser");
-      //       browserPC.addTrack(track);
-      //       metaReady(msgkartCallId, track);
-      //       console.log(`🔊 Meta audio bridged → Browser (call ${msgkartCallId}, agent ${agentIdForCall})`);
-      //       // track.onReceiveRtp.subscribe((rtp) => {
-      //       //   console.log("📥 RTP from meta:", rtp.header.timestamp)
-      //       // });
-      //     } else {
-      //       console.warn(`⚠️ Track already added or invalid for agent ${agentIdForCall}`);
-      //     }
-      //   } catch (err) {
-      //     console.error(`❌ Error in metaPC ontrack for call ${msgkartCallId}:`, err);
-      //   }
-      // };
-
       metaPC.ontrack = (ev) => {
         try {
           const track = ev.track;
-          if (track.kind !== "audio") return;
-
+          // Find the agent mapped to this call
           const agentIdForCall = [...agentToCall.entries()]
-            .find(([aId, cId]) => cId === msgkartCallId)?.[0];
+            .find(([agentId, cId]) => cId === msgkartCallId)?.[0];
 
           if (!agentIdForCall) {
             console.warn(`⚠️ No agent mapped yet for call ${msgkartCallId}.`);
             return;
           }
-
           const agentConn = getAgentConnection(agentIdForCall);
           if (!agentConn?.browserPC) return;
-
           const browserPC = agentConn.browserPC;
-
-          // 🧩 Find existing audio sender on BrowserPC
-          const existingSender = browserPC.getSenders().find(s => s.track?.kind === "audio");
-
-          if (existingSender) {
-            // ✅ Replace old track with the new Meta track (no new transceiver)
-            existingSender.replaceTrack(track);
-            console.log(`♻️ Reused existing BrowserPC sender for agent ${agentIdForCall}`);
-          } else {
-            // ✅ Only first time: add the track
+          // Prevent adding the same track again
+          const alreadyAdded = browserPC.getSenders().some(s => s.track === track);
+          if (track.kind === "audio") {
+            console.log("🎤 Forwarding audio track to Browser");
             browserPC.addTrack(track);
-            console.log(`🎤 Added new BrowserPC sender for agent ${agentIdForCall}`);
+            metaReady(msgkartCallId, track);
+            console.log(`🔊 Meta audio bridged → Browser (call ${msgkartCallId}, agent ${agentIdForCall})`);
+            // track.onReceiveRtp.subscribe((rtp) => {
+            //   console.log("📥 RTP from meta:", rtp.header.timestamp)
+            // });
+          } else {
+            console.warn(`⚠️ Track already added or invalid for agent ${agentIdForCall}`);
           }
-
-          console.log(`🔊 Meta audio bridged → Browser (call ${msgkartCallId}, agent ${agentIdForCall})`);
         } catch (err) {
-          console.error(`❌ Error in metaPC.ontrack:`, err);
+          console.error(`❌ Error in metaPC ontrack for call ${msgkartCallId}:`, err);
         }
       };
-
     }
 
 
