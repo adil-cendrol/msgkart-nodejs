@@ -47,15 +47,27 @@ export async function handleMetaConnection(response) {
           // Prevent adding the same track again
           const alreadyAdded = browserPC.getSenders().some(s => s.track === track);
           console.log(`🔍 Meta PC ontrack for call ${msgkartCallId}, agent ${agentIdForCall}. Already added: ${alreadyAdded}`);
-          if (!alreadyAdded &&track.kind === "audio") {
-            console.log("🎤 Forwarding audio track to Browser");
-            browserPC.addTrack(track);
+          // if (!alreadyAdded &&track.kind === "audio") {
+          //   console.log("🎤 Forwarding audio track to Browser");
+          //   browserPC.addTrack(track);
+          //   metaReady(msgkartCallId, track);
+          //   console.log(`🔊 Meta audio bridged → Browser (call ${msgkartCallId}, agent ${agentIdForCall})`);
+          //   // track.onReceiveRtp.subscribe((rtp) => {
+          //   //   console.log("📥 RTP from meta:", rtp.header.timestamp)
+          //   // });
+          // }
+          if (track.kind === "audio") {
+            const sender = browserPC.getSenders().find(s => s.track && s.track.kind === "audio");
+            if (sender) {
+              sender.replaceTrack(track);
+              console.log(`🔄 Replaced browser track for new call`);
+            } else {
+              browserPC.addTrack(track);
+              console.log(`🎤 Forwarding audio track to Browser`);
+            }
             metaReady(msgkartCallId, track);
-            console.log(`🔊 Meta audio bridged → Browser (call ${msgkartCallId}, agent ${agentIdForCall})`);
-            // track.onReceiveRtp.subscribe((rtp) => {
-            //   console.log("📥 RTP from meta:", rtp.header.timestamp)
-            // });
-          } else {
+          }
+          else {
             console.warn(`⚠️ Track already added or invalid for agent ${agentIdForCall}`);
           }
         } catch (err) {
