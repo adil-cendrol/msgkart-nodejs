@@ -225,21 +225,24 @@ async function bridgeAudioBetweenPeerConnections(agentId, callId) {
     debugPeerConnectionState(metaPC, 'MetaPC');
     console.log(`🔊 Bridging audio for agent ${agentId} and call ${callId}`);
 
-    const audioReceivers = browserPC.getTransceivers()
-      .filter(transceiver => transceiver.receiver.track)
-      .map(transceiver => transceiver.receiver.track);
+    // 🧩 Get all received audio tracks from the Browser
+    const audioTracks = browserPC.getTransceivers()
+      .filter(t => t.receiver?.track && t.receiver.track.kind === "audio")
+      .map(t => t.receiver.track);
 
-    // if (!audioReceivers.length) {
-    //   console.warn(`⚠️ No audio tracks found in BrowserPC`);
-    //   return;
-    // }
+    if (!audioTracks.length) {
+      console.warn(`⚠️ No audio tracks found in BrowserPC for agent ${agentId}`);
+      return;
+    }
 
-    const track = audioReceivers[0].track;
+    const track = audioTracks[0]; // ✅ FIXED HERE
+
+    // Reuse existing sender if present
     const sender = metaPC.getSenders().find(s => s.track?.kind === "audio");
 
     if (sender) {
       await sender.replaceTrack(track);
-      console.log(`♻️ Reused metaPC sender for track ${track.id}`);
+      console.log(`♻️ Reused existing metaPC sender for track ${track.id}`);
     } else {
       const stream = new MediaStream();
       stream.addTrack(track);
