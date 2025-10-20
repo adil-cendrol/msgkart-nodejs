@@ -19,98 +19,71 @@ export async function handleMetaConnection(response) {
 
     // 1️⃣ Get or create Meta PC
     let callConn = getCallConnection(msgkartCallId);
+    let isNewMetaPC = false;
+    
     if (!callConn?.metaPC) {
       const pcObj = await createPeerConnection("sendrecv");
       createMetaConnection(msgkartCallId, pcObj.pc, pcObj.candidates);
       callConn = getCallConnection(msgkartCallId);
       callConn.metaPC._ontrackSet = false;
+      isNewMetaPC = true;
       console.log(`🧩 Created new metaPC for call ${msgkartCallId}`);
     }
 
     const metaPC = callConn.metaPC;
     const metaCandidates = callConn.metaCandidates;
-    if (!metaPC._ontrackSet) {
+
+    // 2️⃣ Set up ontrack handler for NEW MetaPC instances
+    if (isNewMetaPC || !metaPC._ontrackSet) {
       metaPC._ontrackSet = true;
-      // metaPC.ontrack = (ev) => {
-      //   try {
-      //     const track = ev.track;
-      //     // Find the agent mapped to this call
-      //     const agentIdForCall = [...agentToCall.entries()]
-      //       .find(([agentId, cId]) => cId === msgkartCallId)?.[0];
-
-      //     if (!agentIdForCall) {
-      //       console.warn(`⚠️ No agent mapped yet for call ${msgkartCallId}.`);
-      //       return;
-      //     }
-      //     const agentConn = getAgentConnection(agentIdForCall);
-      //     if (!agentConn?.browserPC) return;
-      //     const browserPC = agentConn.browserPC;
-      //     // Prevent adding the same track again
-      //     const alreadyAdded = browserPC.getSenders().some(s => s.track === track);
-      //     if (track.kind === "audio") {
-      //       console.log("🎤 Forwarding audio track to Browser");
-      //       browserPC.addTrack(track);
-      //       metaReady(msgkartCallId, track);
-      //       console.log(`🔊 Meta audio bridged → Browser (call ${msgkartCallId}, agent ${agentIdForCall})`);
-      //       // track.onReceiveRtp.subscribe((rtp) => {
-      //       //   console.log("📥 RTP from meta:", rtp.header.timestamp)
-      //       // });
-      //     } else {
-      //       console.warn(`⚠️ Track already added or invalid for agent ${agentIdForCall}`);
-      //     }
-      //   } catch (err) {
-      //     console.error(`❌ Error in metaPC ontrack for call ${msgkartCallId}:`, err);
-      //   }
-      // };
-
+      
       metaPC.ontrack = (ev) => {
         try {
           const track = ev.track;
           if (track.kind !== "audio") return;
 
-          const agentIdForCall = [...agentToCall.entries()]
-            .find(([aId, cId]) => cId === msgkartCallId)?.[0];
+          console.log(`🎯 MetaPC ontrack FIRED for call ${msgkartCallId}, track: ${track.id}`);
+
+          // Find agent for this call - try multiple approaches
+          let agentIdForCall = agentId || getAgentIdByCall(msgkartCallId);
+          
+          if (!agentIdForCall) {
+            // If no mapping yet, try to find recently mapped agent
+            console.log(`🔍 Searching for agent mapping for call ${msgkartCallId}...`);
+            agentIdForCall = [...agentToCall.entries()]
+              .find(([aId, cId]) => cId === msgkartCallId)?.[0];
+          }
 
           if (!agentIdForCall) {
-            console.warn(`⚠️ No agent mapped yet for call ${msgkartCallId}.`);
+            console.warn(`⚠️ No agent mapped yet for call ${msgkartCallId}. Will retry...`);
+            // Schedule retry after a short delay
+            setTimeout(() => {
+              const retryAgentId = getAgentIdByCall(msgkartCallId);
+              if (retryAgentId) {
+                console.log(`🔄 Retry: Found agent ${retryAgentId} for call ${msgkartCallId}`);
+                bridgeMetaTrackToBrowser(track, retryAgentId, msgkartCallId);
+              }
+            }, 500);
             return;
           }
 
-          const agentConn = getAgentConnection(agentIdForCall);
-          if (!agentConn?.browserPC) return;
-
-          const browserPC = agentConn.browserPC;
-
-          // 🧩 Find existing audio sender on BrowserPC
-          const existingSender = browserPC.getSenders().find(s => s.track?.kind === "audio");
-
-          if (existingSender) {
-            // ✅ Replace old track with the new Meta track (no new transceiver)
-            existingSender.replaceTrack(track);
-            console.log(`♻️ Reused existing BrowserPC sender for agent ${agentIdForCall}`);
-          } else {
-            // ✅ Only first time: add the track
-            browserPC.addTrack(track);
-            console.log(`🎤 Added new BrowserPC sender for agent ${agentIdForCall}`);
-          }
-
-          console.log(`🔊 Meta audio bridged → Browser (call ${msgkartCallId}, agent ${agentIdForCall})`);
+          bridgeMetaTrackToBrowser(track, agentIdForCall, msgkartCallId);
+          
         } catch (err) {
-          console.error(`❌ Error in metaPC.ontrack:`, err);
+          console.error(`❌ Error in metaPC ontrack for call ${msgkartCallId}:`, err);
         }
       };
-
+      
+      console.log(`🎧 Ontrack handler set for MetaPC (call ${msgkartCallId})`);
     }
 
-
-    // 2️⃣ Map agent to call immediately if agentId is provided
+    // 3️⃣ Map agent to call immediately if agentId is provided
     if (agentId && msgkartCallId) {
       mapAgentToCall(agentId, msgkartCallId);
       console.log(`🔗 Mapped agent ${agentId} to call ${msgkartCallId}`);
     }
 
-
-    // 3️⃣ Handle Meta SDP offer request
+    // 4️⃣ Handle Meta SDP offer request
     if (event === "request_meta_offer_sdp") {
       const offer = await metaPC.createOffer();
       await metaPC.setLocalDescription(offer);
@@ -126,16 +99,32 @@ export async function handleMetaConnection(response) {
       };
     }
 
-    // 4️⃣ Handle Meta SDP answer - Set up audio bridging here
+    // 5️⃣ Handle Meta SDP answer - Set up audio bridging here
     if (event === "meta_answer_sdp") {
       console.log(`📞 Setting Meta answer SDP for call ${msgkartCallId}`);
 
       // Use the agentId from the request body, not from mapping
       const agentIdForCall = agentId || getAgentIdByCall(msgkartCallId);
-
       console.log(`🔍 Agent for call ${msgkartCallId} is ${agentIdForCall}`);
 
       await metaPC.setRemoteDescription({ type: "answer", sdp });
+      
+      // Force trigger track events by checking existing receivers
+      setTimeout(() => {
+        const existingReceivers = metaPC.getReceivers().filter(r => r.track);
+        console.log(`🔍 MetaPC has ${existingReceivers.length} existing receivers after setRemoteDescription`);
+        
+        existingReceivers.forEach(receiver => {
+          if (receiver.track && receiver.track.kind === "audio") {
+            console.log(`🎯 Manually processing existing audio track: ${receiver.track.id}`);
+            const agentIdForCall = getAgentIdByCall(msgkartCallId);
+            if (agentIdForCall) {
+              bridgeMetaTrackToBrowser(receiver.track, agentIdForCall, msgkartCallId);
+            }
+          }
+        });
+      }, 100);
+
       // Bridge audio if we have an agent
       if (agentIdForCall) {
         resetBrowserPCForNewCall(agentIdForCall);
@@ -147,8 +136,7 @@ export async function handleMetaConnection(response) {
       return { status: "meta_answer_set" };
     }
 
-    // ddd
-    // 5️⃣ Terminate call
+    // 6️⃣ Terminate call
     if (event === "terminate") {
       await stopRecording(msgkartCallId, presignedUrl);
       removeCallConnection(msgkartCallId);
@@ -160,6 +148,37 @@ export async function handleMetaConnection(response) {
   } catch (err) {
     console.error(`❌ Global error in handleMetaConnection:`, err);
     return { status: "fatal_error", message: err.message };
+  }
+}
+
+// Helper function to bridge meta track to browser
+function bridgeMetaTrackToBrowser(track, agentId, callId) {
+  try {
+    const agentConn = getAgentConnection(agentId);
+    if (!agentConn?.browserPC) {
+      console.warn(`⚠️ No BrowserPC found for agent ${agentId}`);
+      return;
+    }
+
+    const browserPC = agentConn.browserPC;
+
+    // 🧩 Find existing audio sender on BrowserPC
+    const existingSender = browserPC.getSenders().find(s => s.track?.kind === "audio");
+
+    if (existingSender) {
+      // ✅ Replace old track with the new Meta track
+      existingSender.replaceTrack(track);
+      console.log(`♻️ Reused existing BrowserPC sender for agent ${agentId}`);
+    } else {
+      // ✅ Only first time: add the track
+      browserPC.addTrack(track);
+      console.log(`🎤 Added new BrowserPC sender for agent ${agentId}`);
+    }
+
+    metaReady(callId, track);
+    console.log(`🔊 Meta audio bridged → Browser (call ${callId}, agent ${agentId})`);
+  } catch (err) {
+    console.error(`❌ Error bridging meta track to browser:`, err);
   }
 }
 
@@ -175,10 +194,11 @@ async function bridgeAudioBetweenPeerConnections(agentId, callId) {
 
     const browserPC = agentConn.browserPC;
     const metaPC = callConn.metaPC;
+    
     debugPeerConnectionState(agentConn.browserPC, 'BrowserPC');
     debugPeerConnectionState(callConn.metaPC, 'MetaPC');
 
-    console.log(`🔊 Bridging audio between agent ${agentId} and call ${callId}`, !metaPC);
+    console.log(`🔊 Bridging audio between agent ${agentId} and call ${callId}`);
 
     // Forward browser audio tracks to meta
     const browserTracks = browserPC.getTransceivers()
@@ -194,106 +214,12 @@ async function bridgeAudioBetweenPeerConnections(agentId, callId) {
         }
       }
     });
+    
     console.log(`✅ Audio bridge established between agent ${agentId} and call ${callId}`);
   } catch (err) {
     console.error(`❌ Error bridging audio:`, err);
   }
 }
-
-// async function bridgeAudioBetweenPeerConnections(agentId, callId) {
-//   try {
-//     const agentConn = getAgentConnection(agentId);
-//     const callConn = getCallConnection(callId);
-//     if (!agentConn || !callConn) return;
-
-//     const browserPC = agentConn.browserPC;
-//     const metaPC = callConn.metaPC;
-
-//     debugPeerConnectionState(agentConn.browserPC, 'BrowserPC');
-//     debugPeerConnectionState(callConn.metaPC, 'MetaPC');
-//     console.log(`🔊 Setting up audio bridge for agent ${agentId} and call ${callId}`);
-
-//     // Get the remote stream from browserPC (tracks received from browser)
-//     const remoteStreams = browserPC.getReceivers().map(receiver => receiver.track);
-//     const audioTracks = remoteStreams.filter(track => track.kind === "audio");
-
-//     console.log(`🎤 Found ${audioTracks.length} remote audio tracks from browser`);
-
-//     // For each audio track, create a new sender in metaPC
-//     audioTracks.forEach(track => {
-//       try {
-//         // In werift, we need to be careful about track reuse
-//         // Create a new media stream for isolation
-//         const mediaStream = new MediaStream();
-//         mediaStream.addTrack(track);
-
-//         // Add track with the media stream
-//         metaPC.addTrack(track, mediaStream);
-//         browserReady(callId, track);
-
-//         console.log(`✅ Bridged browser track to metaPC: ${track.id}`);
-//       } catch (err) {
-//         console.error(`❌ Failed to bridge track ${track.id}:`, err);
-
-//         // Fallback: create new transceiver
-//         try {
-//           metaPC.addTransceiver(track, { direction: "sendonly" });
-//           console.log(`✅ Used fallback transceiver for track: ${track.id}`);
-//         } catch (fallbackErr) {
-//           console.error(`❌ Fallback also failed for track ${track.id}:`, fallbackErr);
-//         }
-//       }
-//     });
-
-//     console.log(`✅ Audio bridge established for call ${callId}`);
-
-//   } catch (err) {
-//     console.error(`❌ Error bridging audio:`, err);
-//   }
-// }
-
-// async function bridgeAudioBetweenPeerConnections(agentId, callId) {
-//   try {
-//     const agentConn = getAgentConnection(agentId);
-//     const callConn = getCallConnection(callId);
-//     if (!agentConn || !callConn) return;
-
-//     const browserPC = agentConn.browserPC;
-//     const metaPC = callConn.metaPC;
-
-//     debugPeerConnectionState(browserPC, 'BrowserPC');
-//     debugPeerConnectionState(metaPC, 'MetaPC');
-//     console.log(`🔊 Bridging audio for agent ${agentId} and call ${callId}`);
-
-//     // Get the single audio track from BrowserPC’s receiver
-//     const audioReceiver = browserPC.getReceivers().find(r => r.track?.kind === "audio");
-//     const track = audioReceiver?.track;
-
-//     if (!track) {
-//       console.warn(`⚠️ No audio track found in BrowserPC for agent ${agentId}`);
-//       return;
-//     }
-
-//     // Reuse existing meta sender if exists
-//     let sender = metaPC.getSenders().find(s => s.track?.kind === "audio");
-
-//     if (sender) {
-//       await sender.replaceTrack(track);
-//       console.log(`♻️ Reused metaPC sender for new track ${track.id}`);
-//     } else {
-//       const stream = new MediaStream([track]);
-//       metaPC.addTrack(track, stream);
-//       console.log(`🎤 Added new metaPC sender for track ${track.id}`);
-//     }
-
-//     browserReady(callId, track);
-//     console.log(`✅ Audio bridge established for call ${callId}`);
-//   } catch (err) {
-//     console.error(`❌ Error in bridgeAudioBetweenPeerConnections:`, err);
-//   }
-// }
-
-
 
 function debugPeerConnectionState(pc, name) {
   console.log(`🔍 ${name} Debug:`);
