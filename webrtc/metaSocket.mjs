@@ -9,7 +9,8 @@ import {
   listAgentIds,
   agentToCall,
   getCallIdByAgent,
-  getAgentIdByCall
+  getAgentIdByCall,
+  cleanupBrowserPCTracks
 } from "./connectionManager.mjs";
 import { browserReady, metaReady, stopRecording } from "../audio/audioMixer.mjs";
 import { MediaStream } from "werift";
@@ -102,8 +103,6 @@ export async function handleMetaConnection(response) {
 
       // Bridge audio if we have an agent
       if (agentIdForCall) {
-         // CLEANUP OLD TRACKS BEFORE ADDING NEW ONES
-    cleanupBrowserPCTracks(agentIdForCall);
         cleanupBrowserPCTracks(agentIdForCall);
         await bridgeAudioBetweenPeerConnections(agentIdForCall, msgkartCallId);
       } else {
