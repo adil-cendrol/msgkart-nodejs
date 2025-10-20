@@ -147,6 +147,7 @@ export async function handleMetaConnection(response) {
       return { status: "meta_answer_set" };
     }
 
+    // ddd
     // 5️⃣ Terminate call
     if (event === "terminate") {
       await stopRecording(msgkartCallId, presignedUrl);
