@@ -149,5 +149,17 @@ export function removeAgentConnection(agentId) {
   return true;
 }
 
+export function cleanupBrowserPCTracks(agentId) {
+  const agentConn = getAgentConnection(agentId);
+  if (!agentConn?.browserPC) return;
+
+  const pc = agentConn.browserPC;
+  pc.getSenders().forEach(sender => {
+    if (sender.track) sender.track.stop();
+    try { pc.removeTrack(sender); } catch (e) { }
+  });
+}
+
+
 export function listCallIds() { return Array.from(calls.keys()); }
 export function listAgentIds() { return Array.from(agents.keys()); }

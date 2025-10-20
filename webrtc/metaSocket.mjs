@@ -102,6 +102,9 @@ export async function handleMetaConnection(response) {
 
       // Bridge audio if we have an agent
       if (agentIdForCall) {
+         // CLEANUP OLD TRACKS BEFORE ADDING NEW ONES
+    cleanupBrowserPCTracks(agentIdForCall);
+        cleanupBrowserPCTracks(agentIdForCall);
         await bridgeAudioBetweenPeerConnections(agentIdForCall, msgkartCallId);
       } else {
         console.warn(`⚠️ No agent found for call ${msgkartCallId}, audio bridging skipped`);
