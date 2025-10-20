@@ -4,7 +4,8 @@ import { WebSocketServer } from "ws";
 import { PORT } from "./config/env.js";
 import { handleBrowserConnection } from "./webrtc/browserSocket.mjs";
 import { handleMetaConnection } from "./webrtc/metaSocket.mjs";
-import { agentToCall } from "./webrtc/connectionManager.mjs";
+import { agents, agentToCall, calls } from "./webrtc/connectionManager.mjs";
+
 
 const app = express();
 app.use(express.json());
