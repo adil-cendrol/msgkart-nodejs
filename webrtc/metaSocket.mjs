@@ -8,7 +8,7 @@ import {
   mapAgentToCall,
   agentToCall,
   getAgentIdByCall,
-  cleanupBrowserPCTracks
+  resetBrowserPCForNewCall
 } from "./connectionManager.mjs";
 import { browserReady, metaReady, stopRecording } from "../audio/audioMixer.mjs";
 import { MediaStream } from "werift";
@@ -138,7 +138,7 @@ export async function handleMetaConnection(response) {
       await metaPC.setRemoteDescription({ type: "answer", sdp });
       // Bridge audio if we have an agent
       if (agentIdForCall) {
-        cleanupBrowserPCTracks(agentIdForCall);
+        resetBrowserPCForNewCall(agentIdForCall);
         await bridgeAudioBetweenPeerConnections(agentIdForCall, msgkartCallId);
       } else {
         console.warn(`⚠️ No agent found for call ${msgkartCallId}, audio bridging skipped`);
