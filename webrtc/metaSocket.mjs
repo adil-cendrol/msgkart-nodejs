@@ -6,9 +6,7 @@ import {
   getAgentConnection,
   removeCallConnection,
   mapAgentToCall,
-  listAgentIds,
   agentToCall,
-  getCallIdByAgent,
   getAgentIdByCall,
   resetBrowserPCForNewCall
 } from "./connectionManager.mjs";
@@ -102,8 +100,7 @@ export async function handleMetaConnection(response) {
       await metaPC.setRemoteDescription({ type: "answer", sdp });
       // Bridge audio if we have an agent
       if (agentIdForCall) {
-        // Remove any previous tracks sent from this browser to meta
-        resetBrowserPCForNewCall(agentIdForCall);
+     
 
         await bridgeAudioBetweenPeerConnections(agentIdForCall, msgkartCallId);
       } else {
@@ -118,6 +115,8 @@ export async function handleMetaConnection(response) {
       await stopRecording(msgkartCallId, presignedUrl);
       removeCallConnection(msgkartCallId);
       console.log(`🛑 Call ${msgkartCallId} ended and uploaded`);
+         // Remove any previous tracks sent from this browser to meta
+        resetBrowserPCForNewCall(agentIdForCall);
       return { status: `call_disconnected ${msgkartCallId} and ${SubscriberId}` };
     }
 
@@ -239,7 +238,7 @@ async function bridgeAudioBetweenPeerConnections(agentId, callId) {
       try {
         // Reuse existing transceiver if available
         const existingTransceiver = metaPC.getTransceivers()
-          .find(t => !t.sender?.track && t.direction === "inactive");
+          .find(t => !t.sender?.track);
 
         if (existingTransceiver) {
           await existingTransceiver.sender.replaceTrack(track);
@@ -250,6 +249,7 @@ async function bridgeAudioBetweenPeerConnections(agentId, callId) {
           const mediaStream = new MediaStream();
           mediaStream.addTrack(track);
           metaPC.addTrack(track, mediaStream);
+          browserReady(callId, track);
           console.log(`✅ Added new sender for track ${track.id}`);
         }
       } catch (err) {

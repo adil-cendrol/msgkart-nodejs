@@ -165,7 +165,7 @@ export function resetBrowserPCForNewCall(agentId) {
       } catch (e) { }
     }
     // Make transceiver inactive to reuse
-    transceiver.direction = "inactive";
+    // transceiver.direction = "inactive";
   });
 
   console.log(`♻️ BrowserPC for agent ${agentId} reset for new call`);
