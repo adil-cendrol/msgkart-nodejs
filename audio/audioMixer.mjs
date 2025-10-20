@@ -133,6 +133,7 @@ function tryStartRecording(callId) {
 //   rec.metaBuffer = null;
 //   global.gc?.();
 // }
+
 export async function stopRecording(callId, presignedUrl) {
   const rec = recordings.get(callId);
   if (!rec || !rec.isRecordingStarted) return;
@@ -151,10 +152,10 @@ export async function stopRecording(callId, presignedUrl) {
 
       if (presignedUrl) {
         try {
-          const fileStream = fs.createReadStream(wavPath);
+          const fileData = fs.readFileSync(wavPath);
 
           // ✅ Axios equivalent to browser fetch(blob)
-          const response = await axios.put(presignedUrl, fileStream, {
+          const response = await axios.put(presignedUrl, fileData, {
             headers: {
               "Content-Type": "audio/wav", // same as frontend Blob type
             },
