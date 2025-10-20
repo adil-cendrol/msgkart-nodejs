@@ -225,11 +225,14 @@ async function bridgeAudioBetweenPeerConnections(agentId, callId) {
     debugPeerConnectionState(metaPC, 'MetaPC');
     console.log(`🔊 Bridging audio for agent ${agentId} and call ${callId}`);
 
-    const audioReceivers = browserPC.getReceivers().filter(r => r.track?.kind === "audio");
-    if (!audioReceivers.length) {
-      console.warn(`⚠️ No audio tracks found in BrowserPC`);
-      return;
-    }
+    const audioReceivers = browserPC.getTransceivers()
+      .filter(transceiver => transceiver.receiver.track)
+      .map(transceiver => transceiver.receiver.track);
+
+    // if (!audioReceivers.length) {
+    //   console.warn(`⚠️ No audio tracks found in BrowserPC`);
+    //   return;
+    // }
 
     const track = audioReceivers[0].track;
     const sender = metaPC.getSenders().find(s => s.track?.kind === "audio");
